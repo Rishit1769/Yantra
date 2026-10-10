@@ -24,6 +24,9 @@ dependencies = [
 [project.optional-dependencies]
 credentials = ["keyring>=25,<27"]
 
+[project.scripts]
+yantra-smoke = "yantra.devtools.smoke:main"
+
 [dependency-groups]
 dev = [
   "hypothesis>=6.120,<7",

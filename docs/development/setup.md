@@ -14,6 +14,7 @@ uv run ruff format --check .
 uv run pyright
 uv run pytest
 uv build --wheel
+uv run yantra-smoke offline
 ```
 
 ## Windows (PowerShell)
@@ -28,6 +29,7 @@ uv run ruff format --check .
 uv run pyright
 uv run pytest
 uv build --wheel
+uv run yantra-smoke offline
 ```
 
 `uv.lock` pins the development environment. CI is configured for macOS and Windows; until GitHub Actions succeeds on both, those platforms remain unverified. No PostgreSQL service is needed for the current tests.

@@ -4,7 +4,7 @@
 
 YANTRA is a model-agnostic AI agent harness and orchestration framework intended for open-source development. Its architecture aims to give developers explicit control over agent execution, tools, skills, state, persistence, security policy, and observability without binding the framework to one model vendor or application. License selection remains unresolved.
 
-> **Status:** YANTRA-001 core contracts and the YANTRA-002 model gateway foundation are implemented. YANTRA-002 includes provider adapters, normalized completion/streaming, explicit routing policy, credential references, mocked HTTP protocol tests, and a model catalog. Provider behavior has not been live-verified, Windows CI has not run, and the agent execution loop, CLI, persistence integration, and release remain unimplemented. This is not production-ready.
+> **Status:** YANTRA-001 core contracts and the YANTRA-002 model gateway foundation are implemented. YANTRA-002 includes provider adapters, normalized completion/streaming, explicit routing policy, credential references, mocked HTTP protocol tests, a model catalog, and a limited developer smoke CLI. Provider behavior has not been live-verified, Windows CI has not run, and the agent execution loop, general-purpose CLI, persistence integration, and release remain unimplemented. This is not production-ready.
 
 ## Why a harness?
 
@@ -20,6 +20,8 @@ Applications commonly rebuild this boundary, leaving inconsistent provider behav
 - Optional PostgreSQL durability through a TypeScript Prisma persistence service; optional pgvector and Redis.
 - Workflow and bounded multi-agent orchestration, human approval, integrations, evaluation, and observability.
 - SDK and CLI first; optional independent visual inspector later.
+
+For local gateway checks, see the [YANTRA-002 smoke-test guide](docs/development/smoke-testing.md). The smoke CLI is not an agent runner.
 
 Skills, PostgreSQL persistence, web/browser, workflows, and distributed capabilities remain design targets. The model gateway supports opt-in deterministic routing; adaptive routing remains experimental. See the [feature matrix](docs/project/feature-matrix.md) and [roadmap](ROADMAP.md).
 
@@ -76,7 +78,7 @@ sequenceDiagram
 | Optional infrastructure | pgvector for selected retrieval use cases; Redis only when coordination/cache needs justify it |
 | Web capabilities | HTTPX, Beautiful Soup, Playwright |
 | Observability | OpenTelemetry, structlog, structured JSON logs; optional Prometheus/Grafana |
-| Developer tools | Typer, Rich, MkDocs Material, Mermaid |
+| Developer tools | Standard-library argparse smoke runner, MkDocs Material, Mermaid |
 | Infrastructure | Docker, GitHub Actions, PostgreSQL; optional Redis/container workers |
 | Future inspector | Next.js, TypeScript, Tailwind CSS; never required by SDK |
 

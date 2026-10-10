@@ -6,6 +6,7 @@ YANTRA-001 adds a Python package and local contract foundation. YANTRA-002 adds 
 |---|---|---|---|
 | Python contracts/state machine | In Development | 1 | Agent/message/budget/result/state/event contracts; no execution loop |
 | Model gateway (YANTRA-002) | In Development | 1 | Normalized adapters and mocked wire tests; provider behavior not live-verified |
+| Developer smoke CLI (YANTRA-002-V01) | In Development | 1 | Offline mock and manual Ollama/OpenCode checks; not an agent runner |
 | Provider abstraction | In Development | 1 | Async protocol, deterministic mock, and explicit provider registry |
 | Tool registry | In Development | 1 | Typed definitions/validation/schema export; no authorization or execution |
 | Events and logging | In Development | 1 | Serializable events and local structured logger; no tracing backend |

@@ -5,7 +5,7 @@ All dates are intentionally omitted; sequence depends on maintainers, funding, a
 ## Phase 1 — Foundation
 - Dependencies: repository governance and license decision; API review.
 - Deliverables: package structure, typed contracts, model gateway with one conformance-tested adapter, agent runtime/state machine, tool registry/policy, basic tracing, CLI, unit/property tests.
-- Current progress: YANTRA-001 implements packaging, contracts, mock provider, tool registry, state transitions, events, in-memory storage, logging, tests, and CI configuration. YANTRA-002 adds the model gateway and provider adapters with mocked HTTP coverage. Live provider compatibility, the full agent loop, authorization policy, tracing backend, CLI, and cross-platform CI execution remain unverified or unimplemented.
+- Current progress: YANTRA-001 implements packaging, contracts, mock provider, tool registry, state transitions, events, in-memory storage, logging, tests, and CI configuration. YANTRA-002 adds the model gateway and provider adapters with mocked HTTP coverage; YANTRA-002-V01 adds a limited developer smoke CLI. Live provider compatibility, the full agent loop, tool authorization policy, tracing backend, general-purpose CLI, and cross-platform CI execution remain unverified or unimplemented.
 - Acceptance: clean artifact build/install; Python 3.12 support; legal/illegal state tests; denied tools never execute; provider capability mismatch fails clearly; secret canary absent from telemetry; runnable documented quickstart verified.
 - Release gate: API/status review and dependency/security scan. Alpha only; no production claim.
 

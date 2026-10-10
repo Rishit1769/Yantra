@@ -3,7 +3,7 @@
 Current structure separates the implemented Python contract foundation from future services:
 
 ```text
-src/yantra/                # installable Python package, contracts/adapters
+src/yantra/                # installable package; contracts, adapters, gateway, smoke CLI
 tests/unit/                # deterministic unit and contract tests
 .github/workflows/ci.yml   # macOS/Windows CI configuration
 docs/                      # architecture, contracts, operations
