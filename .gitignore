@@ -4,3 +4,13 @@
 *.dump
 *.dump.partial
 backups/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.hypothesis/
+.pyright/
+dist/
+build/
+*.egg-info/

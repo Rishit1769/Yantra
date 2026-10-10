@@ -18,6 +18,7 @@ nav:
       - Quickstart: getting-started/quickstart.md
       - Configuration: getting-started/configuration.md
       - First agent: getting-started/first-agent.md
+  - Core API: specifications/core-runtime-api.md
   - Architecture:
       - Overview: architecture/overview.md
       - System design: architecture/system-design.md

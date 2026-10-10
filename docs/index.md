@@ -1,13 +1,13 @@
 # YANTRA Documentation
 
-This site describes a proposed architecture, not implemented or verified behavior. All feature contracts use **Proposed** status unless explicitly marked otherwise. No feature is production-ready by virtue of being specified.
+This site combines implemented YANTRA-001 contracts with proposed architecture for later milestones. Feature documents identify implementation status; documentation alone is not proof. No feature is production-ready by virtue of being specified.
 
 ## Start here
 
 - [Project vision](project/vision.md), [goals](project/goals.md), [non-goals](project/non-goals.md), [terminology](project/terminology.md), [feature matrix](project/feature-matrix.md)
-- [Introduction](getting-started/introduction.md), [proposed installation](getting-started/installation.md), [proposed quickstart](getting-started/quickstart.md), [configuration](getting-started/configuration.md), [first agent](getting-started/first-agent.md)
+- [Introduction](getting-started/introduction.md), [source installation](getting-started/installation.md), [core quickstart](getting-started/quickstart.md), [configuration](getting-started/configuration.md), [first agent](getting-started/first-agent.md)
 - [Architecture overview](architecture/overview.md), [system design](architecture/system-design.md), [runtime kernel](architecture/runtime-kernel.md), [execution lifecycle](architecture/execution-lifecycle.md), [state machine](architecture/state-machine.md)
-- [Specifications](specifications/agent-contract.md), [compatibility policy](specifications/compatibility-policy.md)
+- [Core API reference](specifications/core-runtime-api.md), [specifications](specifications/agent-contract.md), [compatibility policy](specifications/compatibility-policy.md)
 - [Security threat model](security/threat-model.md), [development standards](development/coding-standards.md), [roadmap](../ROADMAP.md)
 
 ## Architecture
@@ -34,8 +34,9 @@ Feature specifications are organized in [features](features/). Major systems inc
 - [NIRMAAN boundary](integrations/nirmaan.md); provider integration pages are design notes, not claims of working integrations.
 - [Research objectives](research/objectives.md), [adaptive context](research/adaptive-context.md), [adaptive routing](research/adaptive-routing.md), [evidence-guided recovery](research/evidence-guided-recovery.md), [skill learning](research/skill-learning.md), [benchmarks](research/benchmarks.md), [reproducibility](research/reproducibility.md)
 - [Development setup](development/setup.md), [testing strategy](development/testing-strategy.md), [documentation standards](development/documentation-standards.md), [release process](development/release-process.md)
+- [Implemented YANTRA-001 core API](specifications/core-runtime-api.md)
 - [Milestones](roadmap/milestones.md), [dependencies](roadmap/feature-dependencies.md), [acceptance criteria](roadmap/acceptance-criteria.md), [production readiness](roadmap/production-readiness.md)
 
 ## Status vocabulary
 
-Feature implementation status is one of Proposed, Specified, In Development, Implemented, Verified, or Deprecated. This repository's source inspection found only documentation; therefore no runtime status is above Proposed/Specified. “Verified” requires recorded evidence and reproducible checks.
+Feature implementation status is one of Proposed, Specified, In Development, Implemented, Verified, or Deprecated. YANTRA-001 contracts are implemented; full agent execution and later systems remain unimplemented. “Verified” requires recorded evidence and reproducible checks. GitHub Actions is configured for macOS and Windows but has not yet been observed running.

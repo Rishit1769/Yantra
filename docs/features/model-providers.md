@@ -36,6 +36,6 @@ HTTPX, runtime contracts, secret source.
 ## Priority
 P0.
 ## Implementation status
-Proposed.
+In Development. The provider protocol and deterministic mock are implemented; no real provider adapters, network calls, or streaming implementation are included in YANTRA-001.
 ## Open questions
 First provider and provider-specific structured-output semantics.

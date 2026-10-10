@@ -1,5 +1,11 @@
 # Installation
 
-There is no published YANTRA package or repository packaging configuration at present. Do not run an assumed `pip install` or claim a package name is available. The proposed packaging direction is Python 3.12+, uv for development and dependency management, and hatchling as build backend.
+YANTRA-001 adds a source-installable Python package; no release has been published to a package index. Use Python 3.12+ and uv from the repository root:
 
-Future installation documentation must state supported Python versions, extras and optional dependencies, provider-specific dependencies, artifact provenance, and a tested clean-environment command. A release gate requires reproducible wheels/sdists and installation tests from the built artifact.
+```sh
+uv sync --all-groups
+uv run python -c "import yantra; print(yantra.__version__)"
+uv build --wheel
+```
+
+The project license remains unresolved, so do not redistribute the built wheel as an openly licensed release. A published release requires a license decision, supported artifact provenance, clean-environment installation tests, and a versioned compatibility policy.

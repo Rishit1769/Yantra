@@ -2,9 +2,9 @@
 
 **Build Agents. Bring Any Model. Own the Execution.**
 
-YANTRA is a proposed open-source, model-agnostic AI agent harness and orchestration framework. It aims to give developers explicit control over agent execution, tools, skills, state, persistence, security policy, and observability without binding the framework to one model vendor or application.
+YANTRA is a model-agnostic AI agent harness and orchestration framework intended for open-source development. Its architecture aims to give developers explicit control over agent execution, tools, skills, state, persistence, security policy, and observability without binding the framework to one model vendor or application. License selection remains unresolved.
 
-> **Status:** Blueprint only. This repository currently contains documentation and no runtime, SDK, CLI, provider adapter, database service, or verified release. Examples below are proposed interfaces, not executable instructions. No production-readiness, benchmark, security certification, or test-coverage claim is made.
+> **Status:** YANTRA-001 core contracts are implemented: installable Python package, Pydantic agent/message/state/event/budget models, async provider protocol with deterministic mock, typed tool registry, in-memory session/event storage, structured logging, tests, and cross-platform CI configuration. A complete agent execution loop, real provider adapters, CLI, persistence integration, and release have not been implemented. CI targets macOS and Windows but has not yet run on GitHub. This is not production-ready.
 
 ## Why a harness?
 
@@ -21,7 +21,7 @@ Applications commonly rebuild this boundary, leaving inconsistent provider behav
 - Workflow and bounded multi-agent orchestration, human approval, integrations, evaluation, and observability.
 - SDK and CLI first; optional independent visual inspector later.
 
-These are design targets, not implemented features. See the [feature matrix](docs/project/feature-matrix.md) and [roadmap](ROADMAP.md).
+Skills, PostgreSQL persistence, web/browser, workflows, routing, and distributed capabilities remain design targets. See the [feature matrix](docs/project/feature-matrix.md) and [roadmap](ROADMAP.md).
 
 ## Architecture at a glance
 
@@ -69,8 +69,8 @@ sequenceDiagram
 
 | Area | Proposed choice |
 |---|---|
-| Runtime | Python 3.12+, asyncio, AnyIO, Pydantic v2, HTTPX, `Protocol` interfaces |
-| Python tooling | uv, hatchling, Ruff, Pyright, pytest, pytest-asyncio, Hypothesis, pre-commit |
+| Implemented core | Python 3.12+, asyncio, Pydantic v2, typed `Protocol` interfaces |
+| Python tooling | uv, hatchling, Ruff, Pyright, pytest, pytest-asyncio, Hypothesis |
 | Durable persistence | PostgreSQL, TypeScript service, Prisma ORM and Prisma Migrate |
 | Local persistence | In-memory adapter; no database required for simple local execution |
 | Optional infrastructure | pgvector for selected retrieval use cases; Redis only when coordination/cache needs justify it |
@@ -80,7 +80,7 @@ sequenceDiagram
 | Infrastructure | Docker, GitHub Actions, PostgreSQL; optional Redis/container workers |
 | Future inspector | Next.js, TypeScript, Tailwind CSS; never required by SDK |
 
-This is a proposal, not a dependency manifest. The project license is **unselected**; no license file or reuse grant is implied.
+Dependencies are defined in `pyproject.toml`; AnyIO and HTTPX are not added until a core use requires them. The project license is **unselected**; no license file or reuse grant is implied.
 
 ## Model and capability architecture
 
@@ -94,21 +94,30 @@ Tools are individual executable capabilities with schemas, permissions, side-eff
 
 The proposed TypeScript service owns database access and Prisma migrations. The Python adapter speaks a versioned RPC contract; initial transport recommendation is HTTP/JSON over authenticated TLS because it is inspectable and operationally straightforward. gRPC and in-process alternatives are evaluated in the [persistence service design](docs/database/persistence-service.md). No raw credentials belong in database tables. Tool, browser, plugin, and sandbox boundaries require least privilege; Docker alone is not considered a complete security boundary. See [threat model](docs/security/threat-model.md).
 
-## Proposed quickstart shape
+## Core contracts quickstart
 
-No installation command is provided because there is no package or release. Once implemented, the intended developer flow is approximately:
+Install the checkout and development tools with `uv sync --all-groups`. This example exercises the mock provider only; it does not run an agent loop or make network requests.
 
 ```python
-# Proposed API only; this code is not executable in the current repository.
-agent = Agent(model="provider/model", tools=[lookup])
-result = await Runtime(provider=provider).run(agent, "Summarize this source")
+import asyncio
+
+from yantra.core.messages import Message, MessageRole, TextContent
+from yantra.providers import ModelRequest, MockProvider
+
+request = ModelRequest(
+    model_id="mock-small",
+    messages=(Message(role=MessageRole.USER, content=(TextContent(text="Hello"),)),),
+)
+provider = MockProvider([MockProvider.text_response(request, "Hello from YANTRA")])
+response = asyncio.run(provider.complete(request))
+print(response.message.content[0].text)
 ```
 
-See [getting started](docs/getting-started/introduction.md) for the implementation gates before publishing a working quickstart.
+See [development setup](docs/development/setup.md) and the [core API reference](docs/specifications/core-runtime-api.md). Tool registry examples and API limitations are described there.
 
 ## Repository and documentation
 
-The current repository has no application source. Documentation is the complete current deliverable. Use [documentation index](docs/index.md) to navigate; begin with [vision](docs/project/vision.md), [system design](docs/architecture/system-design.md), [runtime kernel](docs/architecture/runtime-kernel.md), [security](docs/security/threat-model.md), and [acceptance criteria](docs/roadmap/acceptance-criteria.md).
+Python source is under `src/yantra`; unit tests are under `tests`; packaging/tooling are in `pyproject.toml`; cross-platform CI is in `.github/workflows/ci.yml`. Use [documentation index](docs/index.md) to navigate; begin with [core API reference](docs/specifications/core-runtime-api.md), [runtime kernel](docs/architecture/runtime-kernel.md), [security](docs/security/threat-model.md), and [acceptance criteria](docs/roadmap/acceptance-criteria.md).
 
 ## Roadmap and contribution
 

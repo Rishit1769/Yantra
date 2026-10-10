@@ -1,14 +1,14 @@
 # Feature Matrix
 
-Repository inspection found no application source or package metadata. Every capability below is therefore **Proposed**, not implemented or verified.
+YANTRA-001 adds a Python package and local contract foundation. Complete feature families remain incomplete; only the specific implemented portions are marked In Development. Verification is limited to recorded local checks; CI platforms are configured but not verified until GitHub Actions runs.
 
 | Capability | Status | Target phase | Key boundary |
 |---|---|---|---|
-| Python runtime, agent loop, typed contracts | Proposed | 1 | Async core, no mandatory database |
-| Provider adapters and routing | Proposed | 1 / research | Capabilities negotiated, no vendor lock-in |
-| Tools, permissions, audit | Proposed | 1-3 | Model cannot authorize its own call |
-| Events and basic tracing | Proposed | 1 | Structured, redacted observations |
-| PostgreSQL persistence | Proposed | 2 | Python calls versioned TypeScript service |
+| Python contracts/state machine | In Development | 1 | Agent/message/budget/result/state/event contracts; no execution loop |
+| Provider abstraction | In Development | 1 | Async protocol and deterministic mock; no live adapter |
+| Tool registry | In Development | 1 | Typed definitions/validation/schema export; no authorization or execution |
+| Events and logging | In Development | 1 | Serializable events and local structured logger; no tracing backend |
+| PostgreSQL persistence | Proposed | 2 | Python calls versioned TypeScript service; not used in YANTRA-001 |
 | Sessions, checkpoints, recovery | Proposed | 2 | No exactly-once external effects guarantee |
 | Skills and validation | Proposed | 3 | Imported/generated content untrusted |
 | Scraping, browser, sandbox | Proposed | 3 | Optional and policy constrained |

@@ -35,6 +35,6 @@ Tool contract and permission system.
 ## Priority
 P0.
 ## Implementation status
-Proposed.
+In Development. Local registration, exact lookup, deterministic listing, unregister, schema export, and Pydantic input/output validation are implemented. Policy authorization, tenant scope, remote catalogs, and tool execution remain out of scope.
 ## Open questions
 Whether dynamic registration is allowed during a run (default should be no).

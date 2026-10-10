@@ -1,13 +1,20 @@
-# Quickstart (Proposed)
+# Core Contracts Quickstart
 
-This is a shape of the intended API only; none of the symbols currently exist.
+This example uses implemented contracts and the deterministic mock provider. It exercises a provider call only; YANTRA-001 does not implement an agent execution loop.
 
 ```python
-# Proposed pseudocode; not executable against this repository.
-provider = Provider.from_config(config)
-agent = Agent(name="researcher", instructions="Cite evidence", tools=[fetch_page])
-async with Runtime(provider=provider) as runtime:
-    result = await runtime.run(agent, "Summarize the public project page")
+import asyncio
+
+from yantra.core.messages import Message, MessageRole, TextContent
+from yantra.providers import MockProvider, ModelRequest
+
+request = ModelRequest(
+    model_id="mock-small",
+    messages=(Message(role=MessageRole.USER, content=(TextContent(text="hello"),)),),
+)
+provider = MockProvider([MockProvider.text_response(request, "hello back")])
+response = asyncio.run(provider.complete(request))
+assert response.message.content[0].text == "hello back"
 ```
 
-A publishable quickstart must include actual installation, credential setup through an environment/secret provider, tool permission configuration, bounded budgets, expected output, and a test command. It must not use real secrets or imply all providers support the same tool features.
+This mock-only example requires no credentials, network, database, or service. It is not an autonomous agent example and does not imply real providers are integrated.

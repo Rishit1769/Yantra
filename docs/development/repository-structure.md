@@ -1,12 +1,13 @@
 # Repository Structure
 
-Current repository: top-level README and documentation tree. There is no `src/`, package metadata, Prisma service, migrations, tests, or CI configuration. Proposed eventual separation:
+Current structure separates the implemented Python contract foundation from future services:
 
 ```text
-packages/yantra-python/    # SDK/runtime, dependency-light
-services/persistence/      # TypeScript API, Prisma schema and migrations
+src/yantra/                # installable Python package, contracts/adapters
+tests/unit/                # deterministic unit and contract tests
+.github/workflows/ci.yml   # macOS/Windows CI configuration
 docs/                      # architecture, contracts, operations
-tests/                     # unit, contract, integration, security, eval
+services/persistence/      # future TypeScript API, Prisma schema/migrations
 ```
 
-This layout is illustrative and not created as implementation. NIRMAAN remains a separate repository/consumer.
+The future persistence service does not exist yet. NIRMAAN remains a separate repository/consumer.

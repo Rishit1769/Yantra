@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "yantra"
+version = "0.1.0"
+description = "A model-agnostic AI agent runtime foundation"
+readme = "README.md"
+requires-python = ">=3.12"
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Operating System :: OS Independent",
+  "Typing :: Typed",
+]
+dependencies = ["pydantic>=2.10,<3"]
+
+[dependency-groups]
+dev = [
+  "hypothesis>=6.120,<7",
+  "pyright>=1.1.390,<2",
+  "pytest>=8.3,<9",
+  "pytest-asyncio>=0.24,<1",
+  "ruff>=0.8,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/yantra"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/yantra", "tests", "docs", "README.md", "pyproject.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+extend-exclude = ["docs/**", "README.md"]
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "UP"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+include = ["src"]
+exclude = ["**/__pycache__", ".venv", "dist", "build"]
+reportMissingTypeStubs = false
