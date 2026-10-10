@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 import pytest
 
 from yantra.core.contracts import ProviderCapabilities
+from yantra.core.errors import ProviderInvalidRequestError
 from yantra.core.messages import Message, MessageRole, TextContent
-from yantra.devtools.smoke import _print_response, run_cli
+from yantra.devtools.smoke import _print_response, _provider_error_summary, run_cli
 from yantra.providers.adapters.anthropic import AnthropicAdapter
 from yantra.providers.adapters.ollama import OllamaAdapter
-from yantra.providers.adapters.opencode import OpenCodeZenAdapter
+from yantra.providers.adapters.openai import OpenAIAdapter
+from yantra.providers.adapters.opencode import OpenCodeGoAdapter, OpenCodeZenAdapter
 from yantra.providers.base import FinishReason, ModelRequest, ModelResponse
 from yantra.providers.catalog import ModelCatalogEntry
 from yantra.providers.gateway import GatewayResponse
@@ -128,6 +132,71 @@ def test_live_opencode_smoke_uses_reference_and_redacts_response(monkeypatch, ca
     assert "Billing opt-in: confirmed" in output
     assert "[REDACTED]" in output
     assert secret not in output
+
+
+def test_live_opencode_go_smoke_provides_a_session_id(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("OPENCODE_GO_API_KEY", "go-live-test-key")
+    seen_metadata: dict[str, object] = {}
+
+    async def list_models(_: OpenCodeGoAdapter) -> tuple[ModelCatalogEntry, ...]:
+        return (
+            ModelCatalogEntry(
+                provider_id="opencode-go",
+                model_id="gpt-6-luna",
+                protocol="openai_responses",
+                capabilities=ProviderCapabilities(streaming=True),
+            ),
+        )
+
+    async def complete(_: OpenAIAdapter, request: ModelRequest) -> ModelResponse:
+        seen_metadata.update(request.metadata)
+        return ModelResponse(
+            request_id=request.request_id,
+            provider_id="opencode-go",
+            model_id=request.model_id,
+            message=Message(
+                role=MessageRole.ASSISTANT,
+                content=(TextContent(text="mock Go response"),),
+            ),
+            finish_reason=FinishReason.STOP,
+        )
+
+    monkeypatch.setattr(OpenCodeGoAdapter, "list_models", list_models)
+    monkeypatch.setattr(OpenAIAdapter, "complete", complete)
+
+    assert run_cli(["complete", "opencode-go/gpt-6-luna", "--allow-billable"]) == 0
+
+    assert "session_id" in seen_metadata
+    UUID(str(seen_metadata["session_id"]))
+    assert "mock Go response" in capsys.readouterr().out
+
+
+def test_cli_provider_error_summary_includes_safe_http_diagnostics() -> None:
+    error = ProviderInvalidRequestError("provider rejected the request", provider_id="opencode-go")
+    error.set_http_diagnostics(
+        status=400,
+        provider_code="unsupported_parameter",
+        request_id="go_req_123",
+    )
+
+    summary = _provider_error_summary(error)
+
+    assert "http_status=400" in summary
+    assert "provider_code=unsupported_parameter" in summary
+    assert "request_id=go_req_123" in summary
+
+
+def test_provider_error_diagnostics_reject_unsafe_values() -> None:
+    error = ProviderInvalidRequestError("bad request")
+    error.set_http_diagnostics(
+        status=400,
+        provider_code="api_key=secret",
+        request_id="Bearer secret",
+    )
+
+    assert error.http_status == 400
+    assert error.provider_error_code is None
+    assert error.provider_request_id is None
 
 
 def test_models_command_uses_live_catalog_without_inference(monkeypatch, capsys) -> None:

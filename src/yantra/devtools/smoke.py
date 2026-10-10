@@ -10,12 +10,14 @@ import time
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from typing import NoReturn, cast
+from uuid import uuid4
 
 from pydantic import JsonValue
 
 from yantra.core.contracts import ModelCapability, ProviderCapabilities, TokenUsage
 from yantra.core.errors import (
     CredentialUnavailableError,
+    ProviderError,
     SecureStorageUnavailableError,
     YantraError,
 )
@@ -211,6 +213,18 @@ def _redact(text: str, secrets: Sequence[str] = ()) -> str:
         if secret:
             redacted = redacted.replace(secret, "[REDACTED]")
     return redacted
+
+
+def _provider_error_summary(error: ProviderError, secrets: Sequence[str] = ()) -> str:
+    diagnostics = [f"code={error.code}"]
+    if error.http_status is not None:
+        diagnostics.append(f"http_status={error.http_status}")
+    if error.provider_error_code is not None:
+        diagnostics.append(f"provider_code={error.provider_error_code}")
+    if error.provider_request_id is not None:
+        diagnostics.append(f"request_id={error.provider_request_id}")
+    message = f"{error.message} ({', '.join(diagnostics)})"
+    return _redact(message, secrets)
 
 
 def _configured_status(runtime: _SmokeRuntime, provider_id: str) -> str:
@@ -437,6 +451,9 @@ async def _execute(args: argparse.Namespace) -> int:
         catalog_entry = await runtime.catalog.get(args.model)
         if catalog_entry is None:
             raise YantraError("selected model was not found in the provider's live catalog")
+        request_metadata: dict[str, JsonValue] = (
+            {"session_id": str(uuid4())} if provider_id == "opencode-go" else {}
+        )
         request = ModelRequest(
             model_id=model_id,
             messages=(
@@ -459,6 +476,7 @@ async def _execute(args: argparse.Namespace) -> int:
                 frozenset({ModelCapability.TOOL_CALLING}) if args.tool_call else frozenset()
             ),
             generation=GenerationSettings(max_output_tokens=args.max_output_tokens),
+            metadata=request_metadata,
         )
         print(f"LIVE INFERENCE TEST: {_redact(args.model, secrets)}")
         if args.allow_billable:
@@ -479,6 +497,9 @@ async def _execute(args: argparse.Namespace) -> int:
             secrets=secrets,
         )
         return 0
+    except ProviderError as exc:
+        print(f"ERROR: {_provider_error_summary(exc, secrets)}", file=sys.stderr)
+        return 1
     except YantraError as exc:
         print(f"ERROR: {_redact(exc.message, secrets)}", file=sys.stderr)
         return 1

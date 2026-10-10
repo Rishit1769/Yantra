@@ -15,6 +15,8 @@
 
 The runner supports local Ollama, OpenCode Zen, and OpenCode Go. Zen and Go use the existing `CredentialManager` with `env://` references by default; their references can instead be changed to `keyring://service/account`. The runner does not accept raw keys as arguments, write credentials, create configuration files, or persist requests and responses.
 
+OpenCode Go smoke inference assigns a fresh session ID to the single smoke conversation and sends it in `x-opencode-session`. Go model discovery and inference are separate operations: a successful `/models` listing does not prove subscription, workspace, or model-specific inference access. The CLI displays HTTP status, a validated provider error code, and a safe request ID when returned; it never prints the upstream error body.
+
 ## macOS Setup
 
 From the repository root, install the locked development environment and run a no-network test:
@@ -76,6 +78,8 @@ unset OPENCODE_ZEN_API_KEY OPENCODE_GO_API_KEY
 ```
 
 The catalog request is live but does not run inference. Every OpenCode completion, stream, or tool-call test requires `--allow-billable` and may incur provider charges or use subscription quota. Run only the commands you intend to authorize.
+
+OpenCode Go documents `/responses` for GPT 6 Luna and `/chat/completions` for DeepSeek-family models. Its client guidance calls for an OpenCode-branded user agent and a stable `x-opencode-session`. The Go chat adapter sends `max_tokens` (the documented DeepSeek Chat Completions parameter), while Responses requests use `max_output_tokens`. The current Go documentation lists DeepSeek V4 model IDs rather than `deepseek-flash`; model catalogs can change, so confirm that an ID is currently supported and entitled before inference. See the [OpenCode Go API guide](https://opencode.ai/docs/go.md), [DeepSeek Chat Completions reference](https://api-docs.deepseek.com/api/create-chat-completion), and [OpenAI Responses reference](https://platform.openai.com/docs/api-reference/responses/create).
 
 ## Windows PowerShell
 

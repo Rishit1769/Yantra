@@ -16,6 +16,15 @@ def _safe_message(message: str) -> str:
     return _BEARER_PATTERN.sub("Bearer [REDACTED]", redacted)[:2000]
 
 
+_DIAGNOSTIC_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
+
+
+def _safe_diagnostic_token(value: str | None) -> str | None:
+    if value is None or not _DIAGNOSTIC_TOKEN_PATTERN.fullmatch(value):
+        return None
+    return value
+
+
 class YantraError(Exception):
     """Base class for public YANTRA errors."""
 
@@ -64,14 +73,36 @@ class ProviderError(YantraError):
     ) -> None:
         self.provider_id = provider_id
         self.retryable = retryable
+        self.http_status: int | None = None
+        self.provider_error_code: str | None = None
+        self.provider_request_id: str | None = None
         super().__init__(message)
+
+    def set_http_diagnostics(
+        self,
+        *,
+        status: int,
+        provider_code: str | None = None,
+        request_id: str | None = None,
+    ) -> ProviderError:
+        """Attach bounded diagnostics without retaining an upstream response body."""
+        if 100 <= status <= 599:
+            self.http_status = status
+        self.provider_error_code = _safe_diagnostic_token(provider_code)
+        self.provider_request_id = _safe_diagnostic_token(request_id)
+        return self
 
     def clone(self) -> ProviderError:
         """Return a fresh exception preserving normalized provider metadata."""
-        return type(self)(
+        clone = type(self)(
             self.message,
             provider_id=self.provider_id,
             retryable=self.retryable,
+        )
+        return clone.set_http_diagnostics(
+            status=self.http_status or 0,
+            provider_code=self.provider_error_code,
+            request_id=self.provider_request_id,
         )
 
 
@@ -116,12 +147,18 @@ class ProviderRateLimitError(ProviderError):
         super().__init__(message, provider_id=provider_id, retryable=retryable)
 
     def clone(self) -> ProviderRateLimitError:
-        return type(self)(
+        clone = type(self)(
             self.message,
             provider_id=self.provider_id,
             retryable=self.retryable,
             retry_after_seconds=self.retry_after_seconds,
         )
+        clone.set_http_diagnostics(
+            status=self.http_status or 0,
+            provider_code=self.provider_error_code,
+            request_id=self.provider_request_id,
+        )
+        return clone
 
 
 class ProviderQuotaError(ProviderError):

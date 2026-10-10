@@ -303,42 +303,50 @@ class HttpxProvider:
     def _http_error(self, status_code: int, headers: httpx.Headers, body: bytes) -> ProviderError:
         # Never include arbitrary upstream response bodies in public errors.
         if status_code == 401:
-            return ProviderAuthenticationError(
+            error = ProviderAuthenticationError(
                 "provider rejected credentials", provider_id=self.provider_id
             )
-        if status_code == 403:
-            return ProviderAuthorizationError(
+        elif status_code == 403:
+            error = ProviderAuthorizationError(
                 "provider denied access", provider_id=self.provider_id
             )
-        if status_code == 402:
-            return ProviderQuotaError(
+        elif status_code == 402:
+            error = ProviderQuotaError(
                 "provider account has insufficient quota", provider_id=self.provider_id
             )
-        if status_code == 404:
-            return ProviderModelUnavailableError(
+        elif status_code == 404:
+            error = ProviderModelUnavailableError(
                 "provider endpoint or model is unavailable", provider_id=self.provider_id
             )
-        if status_code == 429:
-            return ProviderRateLimitError(
+        elif status_code == 429:
+            error = ProviderRateLimitError(
                 "provider rate or quota limit was reached",
                 provider_id=self.provider_id,
                 retry_after_seconds=parse_retry_after(headers.get("retry-after")),
             )
-        if status_code in (408, 504):
-            return ProviderTimeoutError(
+        elif status_code in (408, 504):
+            error = ProviderTimeoutError(
                 "provider request timed out", provider_id=self.provider_id, retryable=True
             )
-        if status_code in (400, 413, 422):
-            return ProviderInvalidRequestError(
+        elif status_code in (400, 413, 422):
+            error = ProviderInvalidRequestError(
                 f"provider rejected the request (HTTP {status_code})", provider_id=self.provider_id
             )
-        if status_code >= 500 or status_code == 425:
-            return ProviderUnavailableError(
+        elif status_code >= 500 or status_code == 425:
+            error = ProviderUnavailableError(
                 f"provider is unavailable (HTTP {status_code})",
                 provider_id=self.provider_id,
                 retryable=True,
             )
-        return ProviderError(f"provider returned HTTP {status_code}", provider_id=self.provider_id)
+        else:
+            error = ProviderError(
+                f"provider returned HTTP {status_code}", provider_id=self.provider_id
+            )
+        return error.set_http_diagnostics(
+            status=status_code,
+            provider_code=_provider_error_code(body),
+            request_id=_provider_request_id(headers),
+        )
 
 
 def parse_retry_after(value: str | None) -> float | None:
@@ -355,3 +363,30 @@ def parse_retry_after(value: str | None) -> float | None:
             return min(max((retry_at - datetime.now(UTC)).total_seconds(), 0.0), 300.0)
         except (TypeError, ValueError, OverflowError):
             return None
+
+
+def _provider_error_code(body: bytes) -> str | None:
+    try:
+        payload_raw: Any = json.loads(body) if body else None
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload_raw, dict):
+        return None
+    payload = cast(dict[str, Any], payload_raw)
+    error_raw = payload.get("error")
+    if not isinstance(error_raw, dict):
+        return None
+    error = cast(dict[str, Any], error_raw)
+    for key in ("code", "type"):
+        value = error.get(key)
+        if isinstance(value, str):
+            return value
+    return None
+
+
+def _provider_request_id(headers: httpx.Headers) -> str | None:
+    for name in ("x-request-id", "request-id", "x-correlation-id"):
+        value = headers.get(name)
+        if value is not None:
+            return value
+    return None

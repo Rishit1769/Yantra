@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from decimal import Decimal
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import httpx
 from pydantic import SecretStr
@@ -73,6 +73,9 @@ class OpenAICompatibleAdapter(HttpxProvider):
         capability_overrides: Mapping[str, ProviderCapabilities] | None = None,
         default_capabilities: ProviderCapabilities | None = None,
         structured_output: str | None = "json_schema",
+        max_output_tokens_parameter: Literal["max_tokens", "max_completion_tokens"] = (
+            "max_completion_tokens"
+        ),
         stream_usage: bool = True,
         session_header_name: str | None = None,
     ) -> None:
@@ -94,6 +97,7 @@ class OpenAICompatibleAdapter(HttpxProvider):
         if structured_output not in {None, "json_schema", "json_object"}:
             raise ValueError("structured_output must be json_schema, json_object, or None")
         self.structured_output_style = structured_output
+        self.max_output_tokens_parameter = max_output_tokens_parameter
         self.stream_usage = stream_usage
 
     @property
@@ -209,7 +213,7 @@ class OpenAICompatibleAdapter(HttpxProvider):
         if settings.top_p is not None:
             payload["top_p"] = settings.top_p
         if settings.max_output_tokens is not None:
-            payload["max_completion_tokens"] = settings.max_output_tokens
+            payload[self.max_output_tokens_parameter] = settings.max_output_tokens
         if settings.stop_sequences:
             payload["stop"] = list(settings.stop_sequences)
         if request.tools:

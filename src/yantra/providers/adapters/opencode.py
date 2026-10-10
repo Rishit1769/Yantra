@@ -185,6 +185,7 @@ class _OpenCodeAdapter(HttpxProvider):
                 credential_manager=self.credential_manager,
                 client=self.client,
                 capability_overrides=self._capability_overrides,
+                max_output_tokens_parameter="max_tokens",
                 stream_usage=True,
                 session_header_name=session_header_name,
             ),

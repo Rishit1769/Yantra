@@ -7,6 +7,7 @@ from pydantic import SecretStr
 from yantra.core.contracts import ModelCapability
 from yantra.core.errors import (
     ProviderAuthenticationError,
+    ProviderInvalidRequestError,
     ProviderProtocolError,
     ProviderTimeoutError,
 )
@@ -545,18 +546,74 @@ async def test_opencode_zen_dispatches_to_protocol_specific_responses_endpoint()
 
 
 @pytest.mark.asyncio
+async def test_opencode_go_gpt_luna_responses_request_uses_session_header() -> None:
+    def handler(req: httpx.Request) -> httpx.Response:
+        assert req.url.path == "/zen/go/v1/responses"
+        assert req.headers["authorization"] == "Bearer go-test-key"
+        assert req.headers["x-opencode-session"] == "session-gpt"
+        assert req.headers["user-agent"] == "yantra/0.2.0"
+        assert json.loads(req.content) == {
+            "model": "gpt-6-luna",
+            "input": [
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "hello"}],
+                }
+            ],
+            "max_output_tokens": 32,
+        }
+        return httpx.Response(
+            200,
+            json={
+                "id": "go-gpt-response",
+                "model": "gpt-6-luna",
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "go response"}],
+                    }
+                ],
+            },
+        )
+
+    http = client("https://opencode.ai/zen/go/v1/", handler)
+    adapter = OpenCodeGoAdapter(
+        credential_manager=CredentialManager(environment={"OPENCODE_GO_API_KEY": "go-test-key"}),
+        client=http,
+    )
+    try:
+        response = await adapter.complete(
+            request("gpt-6-luna", metadata={"session_id": "session-gpt"})
+        )
+    finally:
+        await http.aclose()
+    assert response.message.content[0].text == "go response"
+
+
+@pytest.mark.asyncio
 async def test_opencode_go_uses_separate_endpoint_key_and_session_header() -> None:
     def handler(req: httpx.Request) -> httpx.Response:
-        assert req.url.path == "/zen/go/v1/chat/completions"
         assert req.headers["authorization"] == "Bearer go-test-key"
+        if req.method == "GET":
+            assert req.url.path == "/zen/go/v1/models"
+            return httpx.Response(
+                200,
+                json={"data": [{"id": "deepseek-flash", "name": "DeepSeek Flash"}]},
+            )
         assert req.headers["x-opencode-session"] == "session-123"
-        body = json.loads(req.content)
-        assert body["model"] == "glm-5.3"
+        assert req.url.path == "/zen/go/v1/chat/completions"
+        assert json.loads(req.content) == {
+            "model": "deepseek-flash",
+            "messages": [{"role": "user", "content": "hello"}],
+            "max_tokens": 32,
+        }
         return httpx.Response(
             200,
             json={
                 "id": "go-1",
-                "model": "glm-5.3",
+                "model": "deepseek-flash",
                 "choices": [
                     {
                         "finish_reason": "stop",
@@ -573,12 +630,47 @@ async def test_opencode_go_uses_separate_endpoint_key_and_session_header() -> No
         client=http,
     )
     try:
+        models = await adapter.list_models()
         response = await adapter.complete(
-            request("glm-5.3", metadata={"session_id": "session-123"})
+            request("deepseek-flash", metadata={"session_id": "session-123"})
         )
     finally:
         await http.aclose()
     assert response.provider_id == "opencode-go"
+    assert models[0].model_id == "deepseek-flash"
+
+
+@pytest.mark.asyncio
+async def test_provider_http_error_exposes_only_safe_diagnostic_fields() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            headers={"x-request-id": "go_req_123"},
+            json={
+                "error": {
+                    "code": "unsupported_parameter",
+                    "message": "sensitive-response-body-canary",
+                }
+            },
+        )
+
+    http = client("https://opencode.ai/zen/go/v1/", handler)
+    adapter = OpenCodeGoAdapter(
+        credential_manager=CredentialManager(environment={"OPENCODE_GO_API_KEY": "go-test-key"}),
+        client=http,
+    )
+    try:
+        with pytest.raises(ProviderInvalidRequestError) as exc_info:
+            await adapter.complete(request("gpt-6-luna", metadata={"session_id": "session-123"}))
+    finally:
+        await http.aclose()
+
+    error = exc_info.value
+    assert error.http_status == 400
+    assert error.code == "provider_invalid_request"
+    assert error.provider_error_code == "unsupported_parameter"
+    assert error.provider_request_id == "go_req_123"
+    assert "sensitive-response-body-canary" not in str(error)
 
 
 @pytest.mark.asyncio
