@@ -1,0 +1,5 @@
+# Permission System
+
+Permissions are runtime-owned capability grants bound to an authenticated principal, tenant, agent definition, tool version, resource scope, and policy version. Model output and skill declarations are requests/metadata, never grants. Policies support deny-by-default scopes, effect classifications, resource constraints (such as domain/path), time/budget constraints, and approval requirements.
+
+Evaluation order: validate identity and tenant -> resolve exact capability -> apply explicit deny -> require all scopes/resource conditions -> enforce effect/approval threshold -> record decision -> recheck immediately before dispatch. Child agents inherit only explicit subsets. Revocation invalidates future dispatch; already-running external operation may not be reversible. Policy version and decision reason are auditable. Open question: use a small YANTRA-native policy schema versus an established policy language; initial implementation should keep semantics small and testable.

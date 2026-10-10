@@ -1,0 +1,67 @@
+site_name: YANTRA Documentation
+site_description: Proposed architecture and implementation blueprint for the YANTRA agent runtime
+docs_dir: docs
+site_dir: site
+theme:
+  name: material
+nav:
+  - Home: index.md
+  - Project:
+      - Vision: project/vision.md
+      - Goals: project/goals.md
+      - Non-goals: project/non-goals.md
+      - Terminology: project/terminology.md
+      - Feature matrix: project/feature-matrix.md
+  - Getting started:
+      - Introduction: getting-started/introduction.md
+      - Installation: getting-started/installation.md
+      - Quickstart: getting-started/quickstart.md
+      - Configuration: getting-started/configuration.md
+      - First agent: getting-started/first-agent.md
+  - Architecture:
+      - Overview: architecture/overview.md
+      - System design: architecture/system-design.md
+      - Runtime kernel: architecture/runtime-kernel.md
+      - State machine: architecture/state-machine.md
+      - Model gateway: architecture/model-gateway.md
+      - Tool engine: architecture/tool-engine.md
+      - Skill engine: architecture/skill-engine.md
+      - Persistence: architecture/persistence-architecture.md
+      - Decisions: architecture/decisions/README.md
+  - Database:
+      - Overview: database/overview.md
+      - Entity model: database/entity-model.md
+      - Persistence service: database/persistence-service.md
+      - pgvector: database/pgvector.md
+  - Features:
+      - Runtime: features/agent-runtime.md
+      - Providers: features/model-providers.md
+      - Tools: features/tool-execution.md
+      - Skills: features/skill-registry.md
+      - Workflows: features/workflows.md
+      - Security: features/sandboxing.md
+      - Evaluations: features/evaluations.md
+  - Security: security/threat-model.md
+  - Reliability: reliability/fault-tolerance.md
+  - Deployment: deployment/production.md
+  - Integrations:
+      - NIRMAAN: integrations/nirmaan.md
+      - MCP: integrations/mcp.md
+  - Research: research/objectives.md
+  - Development: development/setup.md
+  - Roadmap:
+      - Milestones: roadmap/milestones.md
+      - Acceptance criteria: roadmap/acceptance-criteria.md
+      - Production readiness: roadmap/production-readiness.md
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format

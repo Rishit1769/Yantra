@@ -1,0 +1,7 @@
+# pgvector (Optional)
+
+pgvector is an optional extension, not a core dependency. Use it only when evaluation shows semantic retrieval improves a defined task over keyword/metadata baselines. Without pgvector, memory and skill discovery must retain keyword/relational operation.
+
+Embedding records include model/provider identity, dimensions, normalization/preprocessing version, content digest, creation time, and source record. Dimensions must match the selected vector column/index; model changes require new versioned embeddings and staged re-embedding, not reinterpretation. Similarity metric (cosine, inner product, or L2) and index type are chosen based on embedding semantics and measured recall/latency. Metadata filters and tenant predicates must be applied before/with vector ranking to prevent cross-tenant leakage. Hybrid retrieval combines keyword and vector results with a documented ranker and provenance.
+
+Prisma may not model or expose every pgvector type/operator/index feature natively. Use migration SQL and carefully parameterized, reviewed raw SQL or a dedicated adapter for unsupported operations; never interpolate untrusted values. Test extension versions, query plans, filters, migration rollback, and index maintenance. Track retrieval quality, freshness, deletion propagation, and embedding cost. Delete/rebuild vectors when source is deleted or embedding model changes. Core functionality must work when extension installation is unavailable.

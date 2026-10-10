@@ -1,0 +1,7 @@
+# Persistence Architecture
+
+Python runtime contracts depend on a language-neutral, versioned persistence port. The TypeScript service implements that port using Prisma Client and owns all database queries and Prisma Migrate execution. The Python package must not import Prisma, generated TypeScript types, SQL drivers for application persistence, or database schema assumptions beyond the API contract.
+
+**Initial transport recommendation: authenticated HTTP/JSON over TLS**, using versioned routes and OpenAPI/JSON Schema generated/validated from shared contract artifacts. It is simple to debug, deploy, proxy, and secure for the expected low-frequency durable operations. gRPC offers generated typed clients and efficient streaming but adds protobuf/toolchain and operational complexity; database drivers in Python would violate ownership; in-process bindings defeat service separation. See the [comparison](../database/persistence-service.md).
+
+Avoid remote calls for transient token chunks, local loop state, and every state tick when only final/safe-boundary durability is required. When persistence is unavailable, durable mode fails closed for writes that cannot be safely buffered, marks outcome unknown where a request may have committed, and does not claim durability. Optional local mode may continue in memory with an explicit non-durable result. Recovery uses idempotency keys, version checks, and reconciliation; no cross-language distributed transaction is assumed.

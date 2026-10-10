@@ -1,0 +1,5 @@
+# Error Taxonomy
+
+Stable categories: `VALIDATION`, `UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `UNSUPPORTED_CAPABILITY`, `RATE_LIMITED`, `TIMEOUT`, `CANCELLED`, `UNAVAILABLE`, `QUOTA_EXCEEDED`, `POLICY_DENIED`, `APPROVAL_REQUIRED`, `RESOURCE_LIMIT`, `PROVIDER_REFUSAL`, `AMBIGUOUS_EFFECT`, `CHECKPOINT_INCOMPATIBLE`, `INTERNAL`. Errors include safe message, retryability hint, subsystem, correlation ID, and optional typed details; never include credentials or unredacted arbitrary provider payload by default.
+
+Retryability is advisory and conditioned on operation idempotency and deadline. `AMBIGUOUS_EFFECT` must not be converted to success or blindly retried. Internal exceptions are logged with protected correlation and exposed as sanitized errors.

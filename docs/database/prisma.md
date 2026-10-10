@@ -1,0 +1,5 @@
+# Prisma
+
+Prisma schema and generated Client live in the TypeScript persistence service. Conventions: explicit model/column mapping, stable identifiers, timestamps in UTC, database constraints mirrored by application validation, tenant ownership, and indexes justified by query plans. Prisma Client is instantiated per service process, configured with bounded pooling, and accessed through repository/service methods rather than exposed to Python.
+
+Prisma Migrate migrations are reviewed, committed, and run as a controlled deployment job, not concurrently by every app replica. Expand/contract migrations preserve compatibility with old/new service versions where rolling deploys are supported. Transaction callbacks must be short and contain only database work. Database errors are mapped to stable persistence contract categories without leaking SQL or row contents. Prisma support for PostgreSQL extensions and custom types is version-sensitive; raw SQL for pgvector must be parameterized, narrowly scoped, reviewed, and tested against supported versions. Do not assume native support for every vector operation.

@@ -1,0 +1,30 @@
+# Entity Model
+
+Proposed relational model. Data types are PostgreSQL-oriented; exact Prisma scalar mappings and UUID choice are implementation decisions. `UUID` identifiers are opaque. Tenant scope is nullable only for explicitly global public catalog records. Secrets are never fields.
+
+| Entity | Purpose and principal fields | Keys, constraints, indexes, relationships | Lifecycle, retention, security |
+|---|---|---|---|
+| Tenant | Isolation boundary: `id UUID`, `name TEXT`, `created_at TIMESTAMPTZ`, status | PK id; unique normalized name where required; tenant parent of scoped records | Retain per contract; administrative access; tenant ID never trusted from model |
+| User | Application identity reference: `id UUID`, `tenant_id UUID`, external subject, timestamps | PK id; FK tenant; unique `(tenant_id, subject)`; index tenant | Identity lifecycle follows IdP; no password/credential storage |
+| Agent | Stable logical agent: `id UUID`, `tenant_id`, name, created/updated | PK; FK tenant; unique scoped name if policy; index tenant | Soft archive or immutable reference policy; no secrets |
+| AgentConfiguration | Immutable definition: `id UUID`, `agent_id`, `version INT`, `schema_version`, `definition JSONB`, digest, created_at | PK; FK agent; unique `(agent_id, version)` and digest; index agent/version | Retain while runs reference it; JSONB versioned, validated, secret-free |
+| Session | Conversation grouping: `id UUID`, `tenant_id`, owner, status, version, timestamps, retention_at | PK; FK tenant/user; index `(tenant_id, updated_at)`; optimistic version | Delete/export policy; isolation and retention apply |
+| Run | Invocation: `id UUID`, `session_id`, config ref/digest, state, state_version, started/ended, budgets, parent_run_id | PK; FK session/config/parent; check state/budget; index `(session_id, created_at)`, state for recovery | Terminal immutable except annotations; sensitive content minimized |
+| Task | Work unit: `id UUID`, `run_id`, parent_task_id, status, dependency metadata, budget, version | PK; FK run/parent; unique task key per run; indexes run/status and parent | Retain with run; prevent cycles/depth abuse in service |
+| ExecutionEvent | Append-only observation: `id UUID`, `run_id`, sequence BIGINT, type, occurred_at, payload JSONB, classification | PK; FK run; unique `(run_id, sequence)`; index `(run_id, sequence)` and type/time | Retention/partitioning; redact sensitive payload; no edits |
+| Checkpoint | Safe resume snapshot: `id UUID`, `run_id`, sequence, schema/runtime versions, state JSONB, digest, created_at | PK; FK run; unique `(run_id, sequence)`; index run/time | Expire per retention; encrypt sensitive content; validate version |
+| ToolExecution | Attempt: `id UUID`, `run_id`, `task_id`, tool/version, status, idempotency key, started/ended, input/output references, error category | PK; FKs run/task; scoped unique idempotency where meaningful; indexes run/status and tool/time | Minimize args/results; sensitive output redacted; ambiguous state retained |
+| ModelInvocation | Call record: `id UUID`, `run_id`, provider/model, request ID, status, timestamps, usage JSONB nullable, route metadata | PK; FK run; index run/time/provider/model | Retention and content policy; no credential or raw prompt by default |
+| Skill | Logical package: `id UUID`, owner/tenant or global, name, created_at | PK; unique owner/name; indexes owner/name | Owner deletion and trust state; imported content untrusted |
+| SkillVersion | Immutable release: `id UUID`, `skill_id`, semantic version, digest, manifest JSONB, instructions/resource refs, status | PK; FK skill; unique `(skill_id, version)` and digest; index tags/search projection | Immutable; quarantine/revoke status; content scanning and provenance |
+| SkillDependency | Version edge: `skill_version_id`, dependency identity/range/pinned version | Composite PK; FKs; indexes target | Immutable with version; cycle/range validation |
+| SkillPermission | Declared scope per version: `skill_version_id`, scope, justification | Composite PK; FK; index scope | Declaration is not a grant; review and revocation history |
+| Plugin | Registration metadata: `id UUID`, owner, name, version, manifest JSONB, digest, status | PK; unique owner/name/version; index status | Allowlist lifecycle; executable trust boundary, provenance |
+| WorkflowDefinition | Immutable graph: `id UUID`, tenant/owner, name, version, schema version, graph JSONB, digest | PK; unique owner/name/version; index owner | Retain while executions reference; DAG and schema validation |
+| WorkflowExecution | Instance: `id UUID`, definition ref, run/session ref, state, version, timestamps | PK; FK definition/run/session; index state/time | Resume against pinned version; tenant isolation |
+| ApprovalRequest | Pending gate: `id UUID`, run/task/tool, requester, status, expires_at, decision actor/time, summary | PK; FKs; index status/expiry and run; unique decision version | Short retention after run policy; bind decision to exact invocation digest |
+| MemoryRecord | Scoped memory: `id UUID`, tenant/owner, namespace, content/reference, metadata JSONB, sensitivity, provenance, expiry | PK; FK tenant/owner; indexes namespace/expiry and metadata query | Consent/retention/delete; content encryption/access control |
+| Artifact | Bounded external payload metadata: `id UUID`, tenant, URI/key, digest, media type, size, classification, expiry | PK; FK tenant; unique digest scope; indexes expiry/tenant | Blob lifecycle coordinated; signed URL/ACL, no public-by-default access |
+| AuditEvent | Security/admin action: `id UUID`, tenant, actor, action, target, timestamp, outcome, metadata JSONB | PK; index tenant/time, actor/time, target; append-only | Retain per policy/legal need; restricted read; never log secrets |
+
+`JSONB` is limited to versioned flexible definitions/events/metadata, not stable relational identity or frequently filtered fields without an index strategy. Table/index partitioning is a measured scaling choice. See [relationships](relationships.md), [transactions](transactions.md), and [tenant isolation](../security/tenant-isolation.md).

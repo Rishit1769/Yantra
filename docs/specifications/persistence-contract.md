@@ -1,0 +1,5 @@
+# Persistence Contract
+
+The language-neutral v1 contract is implemented by a TypeScript service, not directly by the Python runtime. Operations include create/get session, create/get run, compare-and-set run transition with event append, append/list events by cursor, create/get checkpoint, record model/tool attempt, approval lifecycle, workflow/task records, and retention/deletion requests. Each mutation carries tenant context, request ID, idempotency key where meaningful, expected version, and schema version.
+
+Service errors normalize to validation, unauthorized, forbidden, not-found, conflict/stale-version, unavailable, deadline, quota, and unknown. The service enforces tenant filters on every query. HTTP request replay is safe only where the endpoint's idempotency semantics explicitly define it. Multi-entity operations use a local PostgreSQL transaction inside the service; no distributed transaction spans Python/provider/tool and database. Contract changes are additive within major version; destructive schema/API migration requires compatibility window. See [service transport](../database/persistence-service.md).

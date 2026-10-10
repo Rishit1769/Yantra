@@ -1,0 +1,3 @@
+# Configuration Schema
+
+Configuration is proposed as strict Pydantic v2 models with secret references separated from serializable values. Domains: runtime budgets, provider capability requirements and endpoint, tool allow/deny policy, approval policy, persistence mode/endpoint, telemetry/redaction, optional browser domain/network policy, sandbox resource policy, and retention. Defaults are secure and finite; optional infrastructure defaults off. Unknown keys fail validation. Secret values are excluded from `repr`, JSON dumps, errors, telemetry, and persisted run snapshots. Precedence and environment names must be documented and tested before API freeze.
