@@ -186,6 +186,10 @@ async def test_openai_auth_failure_is_normalized_and_body_is_not_exposed() -> No
     finally:
         await http.aclose()
     assert "secret-must-not-leak" not in str(error.value)
+    assert error.value.http_status == 401
+    assert error.value.endpoint_path is None
+    assert error.value.request_body_fields == ("input", "max_output_tokens", "model")
+    assert "authorization" in error.value.request_header_names
 
 
 @pytest.mark.asyncio
@@ -670,6 +674,12 @@ async def test_provider_http_error_exposes_only_safe_diagnostic_fields() -> None
     assert error.code == "provider_invalid_request"
     assert error.provider_error_code == "unsupported_parameter"
     assert error.provider_request_id == "go_req_123"
+    assert error.request_method == "POST"
+    assert error.endpoint_path == "/zen/go/v1/responses"
+    assert error.request_body_fields == ("input", "max_output_tokens", "model")
+    assert "authorization" in error.request_header_names
+    assert "x-opencode-session" in error.request_header_names
+    assert "hello" not in str(error)
     assert "sensitive-response-body-canary" not in str(error)
 
 

@@ -177,6 +177,10 @@ def test_cli_provider_error_summary_includes_safe_http_diagnostics() -> None:
         status=400,
         provider_code="unsupported_parameter",
         request_id="go_req_123",
+        method="POST",
+        path="/zen/go/v1/chat/completions",
+        header_names=("authorization", "x-opencode-session"),
+        body_fields=("model", "messages", "max_tokens"),
     )
 
     summary = _provider_error_summary(error)
@@ -184,6 +188,10 @@ def test_cli_provider_error_summary_includes_safe_http_diagnostics() -> None:
     assert "http_status=400" in summary
     assert "provider_code=unsupported_parameter" in summary
     assert "request_id=go_req_123" in summary
+    assert "path=/zen/go/v1/chat/completions" in summary
+    assert "body_fields=max_tokens,messages,model" in summary
+    assert "header_names=authorization,x-opencode-session" in summary
+    assert "hello" not in summary
 
 
 def test_provider_error_diagnostics_reject_unsafe_values() -> None:

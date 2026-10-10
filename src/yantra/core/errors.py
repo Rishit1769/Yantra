@@ -17,6 +17,9 @@ def _safe_message(message: str) -> str:
 
 
 _DIAGNOSTIC_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
+_DIAGNOSTIC_PATH_PATTERN = re.compile(
+    r"^/zen/(?:go/)?v1/(?:responses|chat/completions|messages|models|systemone)$"
+)
 
 
 def _safe_diagnostic_token(value: str | None) -> str | None:
@@ -76,6 +79,10 @@ class ProviderError(YantraError):
         self.http_status: int | None = None
         self.provider_error_code: str | None = None
         self.provider_request_id: str | None = None
+        self.request_method: str | None = None
+        self.endpoint_path: str | None = None
+        self.request_header_names: tuple[str, ...] = ()
+        self.request_body_fields: tuple[str, ...] = ()
         super().__init__(message)
 
     def set_http_diagnostics(
@@ -84,12 +91,36 @@ class ProviderError(YantraError):
         status: int,
         provider_code: str | None = None,
         request_id: str | None = None,
+        method: str | None = None,
+        path: str | None = None,
+        header_names: tuple[str, ...] = (),
+        body_fields: tuple[str, ...] = (),
     ) -> ProviderError:
         """Attach bounded diagnostics without retaining an upstream response body."""
         if 100 <= status <= 599:
             self.http_status = status
         self.provider_error_code = _safe_diagnostic_token(provider_code)
         self.provider_request_id = _safe_diagnostic_token(request_id)
+        self.request_method = _safe_diagnostic_token(method)
+        self.endpoint_path = path if path and _DIAGNOSTIC_PATH_PATTERN.fullmatch(path) else None
+        self.request_header_names = tuple(
+            sorted(
+                {
+                    token
+                    for name in header_names
+                    if (token := _safe_diagnostic_token(name.lower())) is not None
+                }
+            )
+        )
+        self.request_body_fields = tuple(
+            sorted(
+                {
+                    token
+                    for name in body_fields
+                    if (token := _safe_diagnostic_token(name)) is not None
+                }
+            )
+        )
         return self
 
     def clone(self) -> ProviderError:
@@ -103,6 +134,10 @@ class ProviderError(YantraError):
             status=self.http_status or 0,
             provider_code=self.provider_error_code,
             request_id=self.provider_request_id,
+            method=self.request_method,
+            path=self.endpoint_path,
+            header_names=self.request_header_names,
+            body_fields=self.request_body_fields,
         )
 
 
@@ -157,6 +192,10 @@ class ProviderRateLimitError(ProviderError):
             status=self.http_status or 0,
             provider_code=self.provider_error_code,
             request_id=self.provider_request_id,
+            method=self.request_method,
+            path=self.endpoint_path,
+            header_names=self.request_header_names,
+            body_fields=self.request_body_fields,
         )
         return clone
 

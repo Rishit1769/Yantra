@@ -200,7 +200,9 @@ class HttpxProvider:
                 ) as response:
                     body = await self._read_limited(response, limit)
                     if response.status_code < 200 or response.status_code >= 300:
-                        raise self._http_error(response.status_code, response.headers, body)
+                        raise self._http_error(
+                            response.status_code, response.headers, body, response.request
+                        )
                     try:
                         parsed_raw: Any = json.loads(body) if body else {}
                     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -259,7 +261,9 @@ class HttpxProvider:
                         body = await self._read_limited(
                             response, min(self._max_response_bytes, 64 * 1024)
                         )
-                        raise self._http_error(response.status_code, response.headers, body)
+                        raise self._http_error(
+                            response.status_code, response.headers, body, response.request
+                        )
                     yield response
         except TimeoutError as exc:
             raise ProviderTimeoutError(
@@ -300,7 +304,13 @@ class HttpxProvider:
             chunks.append(chunk)
         return b"".join(chunks)
 
-    def _http_error(self, status_code: int, headers: httpx.Headers, body: bytes) -> ProviderError:
+    def _http_error(
+        self,
+        status_code: int,
+        headers: httpx.Headers,
+        body: bytes,
+        request: httpx.Request,
+    ) -> ProviderError:
         # Never include arbitrary upstream response bodies in public errors.
         if status_code == 401:
             error = ProviderAuthenticationError(
@@ -346,6 +356,10 @@ class HttpxProvider:
             status=status_code,
             provider_code=_provider_error_code(body),
             request_id=_provider_request_id(headers),
+            method=request.method,
+            path=(request.url.path if request.url.host.lower() == "opencode.ai" else None),
+            header_names=tuple(request.headers.keys()),
+            body_fields=_json_field_names(request.content),
         )
 
 
@@ -390,3 +404,16 @@ def _provider_request_id(headers: httpx.Headers) -> str | None:
         if value is not None:
             return value
     return None
+
+
+def _json_field_names(body: bytes) -> tuple[str, ...]:
+    if len(body) > 1_048_576:
+        return ()
+    try:
+        payload: Any = json.loads(body) if body else None
+    except (RuntimeError, UnicodeDecodeError, json.JSONDecodeError):
+        return ()
+    if not isinstance(payload, dict):
+        return ()
+    fields = cast(dict[str, Any], payload)
+    return tuple(sorted(fields))

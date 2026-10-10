@@ -223,6 +223,14 @@ def _provider_error_summary(error: ProviderError, secrets: Sequence[str] = ()) -
         diagnostics.append(f"provider_code={error.provider_error_code}")
     if error.provider_request_id is not None:
         diagnostics.append(f"request_id={error.provider_request_id}")
+    if error.request_method is not None:
+        diagnostics.append(f"method={error.request_method}")
+    if error.endpoint_path is not None:
+        diagnostics.append(f"path={error.endpoint_path}")
+    if error.request_body_fields:
+        diagnostics.append(f"body_fields={','.join(error.request_body_fields)}")
+    if error.request_header_names:
+        diagnostics.append(f"header_names={','.join(error.request_header_names)}")
     message = f"{error.message} ({', '.join(diagnostics)})"
     return _redact(message, secrets)
 
@@ -478,7 +486,11 @@ async def _execute(args: argparse.Namespace) -> int:
             generation=GenerationSettings(max_output_tokens=args.max_output_tokens),
             metadata=request_metadata,
         )
-        print(f"LIVE INFERENCE TEST: {_redact(args.model, secrets)}")
+        protocol = catalog_entry.protocol or "unknown protocol"
+        print(
+            f"LIVE INFERENCE TEST: {_redact(args.model, secrets)} "
+            f"(protocol={_redact(protocol, secrets)})"
+        )
         if args.allow_billable:
             print("Billing opt-in: confirmed by --allow-billable")
         started = time.perf_counter()
