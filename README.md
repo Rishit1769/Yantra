@@ -4,7 +4,7 @@
 
 YANTRA is a model-agnostic AI agent harness and orchestration framework intended for open-source development. Its architecture aims to give developers explicit control over agent execution, tools, skills, state, persistence, security policy, and observability without binding the framework to one model vendor or application. License selection remains unresolved.
 
-> **Status:** YANTRA-001 core contracts are implemented: installable Python package, Pydantic agent/message/state/event/budget models, async provider protocol with deterministic mock, typed tool registry, in-memory session/event storage, structured logging, tests, and cross-platform CI configuration. A complete agent execution loop, real provider adapters, CLI, persistence integration, and release have not been implemented. CI targets macOS and Windows but has not yet run on GitHub. This is not production-ready.
+> **Status:** YANTRA-001 core contracts and the YANTRA-002 model gateway foundation are implemented. YANTRA-002 includes provider adapters, normalized completion/streaming, explicit routing policy, credential references, mocked HTTP protocol tests, and a model catalog. Provider behavior has not been live-verified, Windows CI has not run, and the agent execution loop, CLI, persistence integration, and release remain unimplemented. This is not production-ready.
 
 ## Why a harness?
 
@@ -21,7 +21,7 @@ Applications commonly rebuild this boundary, leaving inconsistent provider behav
 - Workflow and bounded multi-agent orchestration, human approval, integrations, evaluation, and observability.
 - SDK and CLI first; optional independent visual inspector later.
 
-Skills, PostgreSQL persistence, web/browser, workflows, routing, and distributed capabilities remain design targets. See the [feature matrix](docs/project/feature-matrix.md) and [roadmap](ROADMAP.md).
+Skills, PostgreSQL persistence, web/browser, workflows, and distributed capabilities remain design targets. The model gateway supports opt-in deterministic routing; adaptive routing remains experimental. See the [feature matrix](docs/project/feature-matrix.md) and [roadmap](ROADMAP.md).
 
 ## Architecture at a glance
 
@@ -80,11 +80,11 @@ sequenceDiagram
 | Infrastructure | Docker, GitHub Actions, PostgreSQL; optional Redis/container workers |
 | Future inspector | Next.js, TypeScript, Tailwind CSS; never required by SDK |
 
-Dependencies are defined in `pyproject.toml`; AnyIO and HTTPX are not added until a core use requires them. The project license is **unselected**; no license file or reuse grant is implied.
+Dependencies are defined in `pyproject.toml`; HTTPX supports the model gateway and keyring is an optional credentials extra. The project license is **unselected**; no license file or reuse grant is implied.
 
 ## Model and capability architecture
 
-Adapters normalize transport, authentication, streaming chunks, usage, and provider errors into versioned YANTRA contracts. Capabilities are negotiated per model/deployment; tool calling, structured output, streaming, and usage fields are not assumed universal. Unsupported features fail clearly or use an explicitly selected fallback; the gateway must not silently emulate semantics that alter safety. Candidate integrations include OpenAI, Anthropic, Google Gemini, DeepSeek, Ollama, and compatible inference servers. See [model gateway](docs/architecture/model-gateway.md) and [provider contract](docs/specifications/model-provider-contract.md).
+Adapters normalize transport, authentication, streaming chunks, usage, and provider errors into versioned YANTRA contracts. The current gateway includes OpenAI, Anthropic, Gemini, DeepSeek, Ollama, OpenRouter, OpenCode Zen/Go, generic OpenAI-compatible, and generic protocol adapters. Capabilities are negotiated per model/deployment; unknown support stays unknown. Mocked HTTP tests do not establish live provider compatibility. See [model gateway](docs/architecture/model-gateway.md) and [provider contract](docs/specifications/model-provider-contract.md).
 
 ## Tools and skills
 

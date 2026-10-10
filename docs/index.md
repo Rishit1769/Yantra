@@ -1,6 +1,6 @@
 # YANTRA Documentation
 
-This site combines implemented YANTRA-001 contracts with proposed architecture for later milestones. Feature documents identify implementation status; documentation alone is not proof. No feature is production-ready by virtue of being specified.
+This site combines implemented YANTRA-001 contracts and the YANTRA-002 model gateway foundation with proposed architecture for later milestones. Feature documents identify implementation status; documentation alone is not proof. No feature is production-ready by virtue of being specified.
 
 ## Start here
 
@@ -34,9 +34,9 @@ Feature specifications are organized in [features](features/). Major systems inc
 - [NIRMAAN boundary](integrations/nirmaan.md); provider integration pages are design notes, not claims of working integrations.
 - [Research objectives](research/objectives.md), [adaptive context](research/adaptive-context.md), [adaptive routing](research/adaptive-routing.md), [evidence-guided recovery](research/evidence-guided-recovery.md), [skill learning](research/skill-learning.md), [benchmarks](research/benchmarks.md), [reproducibility](research/reproducibility.md)
 - [Development setup](development/setup.md), [testing strategy](development/testing-strategy.md), [documentation standards](development/documentation-standards.md), [release process](development/release-process.md)
-- [Implemented YANTRA-001 core API](specifications/core-runtime-api.md)
+- [YANTRA-001 core API and YANTRA-002 model gateway API](specifications/core-runtime-api.md)
 - [Milestones](roadmap/milestones.md), [dependencies](roadmap/feature-dependencies.md), [acceptance criteria](roadmap/acceptance-criteria.md), [production readiness](roadmap/production-readiness.md)
 
 ## Status vocabulary
 
-Feature implementation status is one of Proposed, Specified, In Development, Implemented, Verified, or Deprecated. YANTRA-001 contracts are implemented; full agent execution and later systems remain unimplemented. “Verified” requires recorded evidence and reproducible checks. GitHub Actions is configured for macOS and Windows but has not yet been observed running.
+Feature implementation status is one of Proposed, Specified, In Development, Implemented, Verified, or Deprecated. YANTRA-001 contracts and the YANTRA-002 gateway foundation are implemented with local mocked tests; full agent execution and later systems remain unimplemented. Live provider behavior and GitHub Actions on macOS/Windows have not been verified.

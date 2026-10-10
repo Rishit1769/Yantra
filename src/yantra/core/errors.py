@@ -32,6 +32,24 @@ class ConfigurationError(YantraError):
     code = "configuration_error"
 
 
+class CredentialError(YantraError):
+    """Credential reference or secure-storage operation failed."""
+
+    code = "credential_error"
+
+
+class CredentialUnavailableError(CredentialError):
+    """A credential is not available from its configured secure source."""
+
+    code = "credential_unavailable"
+
+
+class SecureStorageUnavailableError(CredentialError):
+    """No secure OS credential backend is available; plaintext fallback is forbidden."""
+
+    code = "secure_storage_unavailable"
+
+
 class ProviderError(YantraError):
     """Normalized provider failure without raw credential-bearing payloads."""
 
@@ -61,6 +79,115 @@ class ProviderTimeoutError(ProviderError):
     """Provider request exceeded its deadline."""
 
     code = "provider_timeout"
+
+
+class ProviderAuthenticationError(ProviderError):
+    """Provider rejected credentials or authentication headers."""
+
+    code = "provider_authentication_error"
+
+
+class ProviderCredentialError(ProviderAuthenticationError):
+    """A provider credential is invalid or unavailable."""
+
+    code = "provider_credential_error"
+
+
+class ProviderAuthorizationError(ProviderError):
+    """Credentials are recognized but lack access to the operation/model."""
+
+    code = "provider_authorization_error"
+
+
+class ProviderRateLimitError(ProviderError):
+    """Provider applied a rate or quota limit."""
+
+    code = "provider_rate_limited"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider_id: str | None = None,
+        retryable: bool = True,
+        retry_after_seconds: float | None = None,
+    ) -> None:
+        self.retry_after_seconds = retry_after_seconds
+        super().__init__(message, provider_id=provider_id, retryable=retryable)
+
+    def clone(self) -> ProviderRateLimitError:
+        return type(self)(
+            self.message,
+            provider_id=self.provider_id,
+            retryable=self.retryable,
+            retry_after_seconds=self.retry_after_seconds,
+        )
+
+
+class ProviderQuotaError(ProviderError):
+    """Provider account or key lacks credits/quota for an inference request."""
+
+    code = "provider_quota_exceeded"
+
+
+class ProviderUnavailableError(ProviderError):
+    """Provider or upstream endpoint is temporarily unavailable."""
+
+    code = "provider_unavailable"
+
+
+class ProviderNetworkError(ProviderError):
+    """HTTP transport failed before a valid provider response was received."""
+
+    code = "provider_network_error"
+
+
+class ProviderInvalidRequestError(ProviderError):
+    """Provider rejected a request as invalid or unsupported."""
+
+    code = "provider_invalid_request"
+
+
+class ProviderProtocolError(ProviderError):
+    """Provider returned a malformed or incompatible protocol response."""
+
+    code = "provider_protocol_error"
+
+
+class ProviderModelUnavailableError(ProviderError):
+    """Provider does not offer or grant access to the selected model."""
+
+    code = "provider_model_unavailable"
+
+
+class ModelIdentifierError(YantraError):
+    """A provider/model reference is malformed."""
+
+    code = "model_identifier_error"
+
+
+class ProviderNotFoundError(YantraError):
+    """No adapter is registered for a provider identifier."""
+
+    code = "provider_not_found"
+
+
+class DuplicateProviderError(YantraError):
+    """A provider identifier is already registered."""
+
+    code = "duplicate_provider"
+
+
+class ModelNotFoundError(YantraError):
+    """A model is missing from the selected catalog."""
+
+    code = "model_not_found"
+
+
+class RoutingPolicyError(YantraError):
+    """Routing violates explicit approval or request policy."""
+
+    code = "routing_policy_error"
 
 
 class UnsupportedCapabilityError(ProviderError):

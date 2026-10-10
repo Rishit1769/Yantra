@@ -1,6 +1,6 @@
 # Core Runtime API (YANTRA-001)
 
-**Status: Implemented and locally verified on macOS/Python 3.12.15 with 40 passing tests, clean Ruff/Pyright checks, and a wheel installation smoke test. macOS/Windows GitHub Actions have not run yet.** This page describes the YANTRA-001 contract foundation only. It does not document a full agent loop, runtime scheduler, live provider, tool authorization system, or durable persistence adapter.
+**Status:** The YANTRA-001 contract foundation and YANTRA-002 model gateway have local test coverage on macOS/Python 3.12.15. The current repository suite, lint, type check, and package build are verified locally; see session validation rather than treating historical counts below as current. macOS/Windows GitHub Actions and live provider behavior have not been verified. This page does not document a full agent loop, runtime scheduler, tool authorization system, or durable persistence adapter.
 
 ## Package and installation
 
@@ -33,7 +33,13 @@ request = ModelRequest(
 provider = MockProvider([MockProvider.text_response(request, "hello back")])
 ```
 
-The asynchronous call is `await provider.complete(request)`.
+The asynchronous call is `await provider.complete(request)`. YANTRA-001's deterministic mock remains a contract test helper; it is not a live adapter.
+
+## Model Gateway (YANTRA-002)
+
+`ModelGateway` wraps an explicit `ProviderRegistry`, resolves `provider/model` references, validates required capabilities, applies `ModelRoutingPolicy`, and returns a `GatewayResponse` with actual route/fallback metadata and available cost information. `complete()` supports a manually selected model by default; automatic routing requires a catalog plus a current digest-bound policy approval. `stream()` yields normalized `ModelStreamEvent` values and will not switch providers after yielding an event. Catalog listing and credential validation are separate from inference entitlement.
+
+Provider adapters exist for OpenAI, Anthropic, Gemini, DeepSeek, Ollama, OpenRouter, OpenCode Zen/Go, OpenAI-compatible endpoints, and a generic protocol adapter. Their HTTP behavior is covered by mocked transports only; this does not verify current live API behavior. Cost enforcement is a preflight estimate based on explicit input/output token bounds and provider pricing metadata, not a guaranteed billing cap. Credential smoke tests can incur charges and require explicit opt-in.
 
 ## Tools and registry
 
@@ -84,4 +90,4 @@ Public exceptions derive from `YantraError` and include configuration, provider 
 
 ## Limitations
 
-No full execution loop, live model adapter, streaming implementation, tool execution/authorization, skill system, CLI, HTTP client, database integration, Redis, pgvector, distributed coordination, or production support is part of YANTRA-001. Future milestones may evolve contracts under the compatibility policy; `0.1.0` is not a stable API promise.
+No full agent execution loop, tool execution/authorization, skill system, CLI, database integration, Redis, pgvector, distributed coordination, or production support is implemented. Live provider behavior, Windows compatibility, and production network controls are not verified. Future milestones may evolve contracts under the compatibility policy; `0.1.0` is not a stable API promise.

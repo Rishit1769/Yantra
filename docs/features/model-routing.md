@@ -15,7 +15,7 @@ Router is optional above gateway adapters; adaptive policy is research-only.
 ## Data flow
 Requirements -> eligible set -> deterministic policy -> route record -> adapter call -> outcome feedback.
 ## Interfaces
-Proposed `RoutingPolicy.choose(request, candidates)` returning candidate and reason.
+`ModelRoutingPolicy` defaults to manual selection. Automatic model order, fallback chains, retries beyond one attempt, local-to-cloud routing, and configured cost limits require an approval digest bound to the exact policy settings. Automatic selection filters by known capabilities, allowlists, locality, and available pricing; it follows operator-specified order rather than optimizing quality. Gateway responses and metadata-only events record the selected model and route decision.
 ## Persistence
 Persist route decision metadata for reproducibility, not credentials.
 ## Configuration
@@ -35,6 +35,6 @@ Model gateway and capability registry.
 ## Priority
 P2.
 ## Implementation status
-Proposed.
+YANTRA-002 implements manual-first routing, opt-in deterministic candidate ordering, explicit bounded fallback/retry policy, local-only and local-to-cloud controls, allowlists, cost preflight, and metadata-only route events. Cost enforcement requires known pricing and token bounds and is an estimate, not a hard provider billing cap. Adaptive/quality-based routing, latency learning, and persistent route history are not implemented.
 ## Open questions
 Pricing source and whether routing belongs in core or optional package.

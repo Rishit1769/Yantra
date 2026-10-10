@@ -1,3 +1,3 @@
-# Anthropic Integration (Design)
+# Anthropic Integration (YANTRA-002)
 
-Candidate adapter only; no working integration is claimed. Normalize provider-specific messages/content blocks, tool-use lifecycle, streaming, usage and errors into YANTRA contracts. Negotiate capabilities per model/deployment and clearly reject unsupported output modes. Credentials remain external secrets. Contract fixtures and optional live compatibility checks are required before listing an adapter as verified.
+The Anthropic Messages adapter is implemented with normalized messages/content blocks, tool-use lifecycle, streaming, usage, model listing, credential validation, and typed errors. Current protocol tests use mocked HTTP only; live compatibility and account access are unverified. Capability overrides are per model, unsupported output modes fail explicitly, and credentials remain external secrets.

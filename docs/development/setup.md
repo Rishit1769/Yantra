@@ -1,6 +1,6 @@
 # Development Setup
 
-YANTRA-001 requires Python 3.12+ and uv. The core has no network, PostgreSQL, Prisma, or platform-specific runtime dependency.
+YANTRA requires Python 3.12+ and uv. HTTPX is included for model gateway adapters, but the core contracts and mock quickstart make no network calls. PostgreSQL and Prisma are not runtime dependencies; OS keyring support is optional.
 
 ## macOS
 
@@ -30,4 +30,4 @@ uv run pytest
 uv build --wheel
 ```
 
-`uv.lock` pins the development environment. CI runs this suite on macOS and Windows; until a GitHub Actions run succeeds on both, those platforms are configured but not verified. Do not connect to PostgreSQL for YANTRA-001.
+`uv.lock` pins the development environment. CI is configured for macOS and Windows; until GitHub Actions succeeds on both, those platforms remain unverified. No PostgreSQL service is needed for the current tests.

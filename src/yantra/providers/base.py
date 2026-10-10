@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from enum import StrEnum
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
@@ -22,6 +22,64 @@ class FinishReason(StrEnum):
     UNKNOWN = "unknown"
 
 
+class ModelProtocol(StrEnum):
+    OPENAI_RESPONSES = "openai_responses"
+    OPENAI_CHAT = "openai_chat_completions"
+    ANTHROPIC_MESSAGES = "anthropic_messages"
+    GEMINI_CONTENT = "gemini_generate_content"
+    OLLAMA_CHAT = "ollama_chat"
+    SYSTEM_ONE = "system_one"
+
+
+class GenerationSettings(BaseModel):
+    """Common generation settings with provider-specific options kept separate."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    temperature: float | None = Field(default=None, ge=0, le=2, allow_inf_nan=False)
+    top_p: float | None = Field(default=None, gt=0, le=1, allow_inf_nan=False)
+    max_output_tokens: int | None = Field(default=None, ge=1)
+    stop_sequences: tuple[str, ...] = ()
+
+
+class ModelStreamEventType(StrEnum):
+    RESPONSE_STARTED = "response_started"
+    TEXT_DELTA = "text_delta"
+    REASONING_DELTA = "reasoning_delta"
+    TOOL_CALL_DELTA = "tool_call_delta"
+    USAGE = "usage"
+    RESPONSE_COMPLETED = "response_completed"
+    RESPONSE_FAILED = "response_failed"
+
+
+class ToolCallDelta(BaseModel):
+    """A tool-call fragment with stable call index and provider ID when sent."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    index: int = Field(ge=0)
+    call_id: str | None = None
+    name_delta: str | None = None
+    arguments_delta: str = ""
+
+
+class ModelStreamEvent(BaseModel):
+    """Normalized streaming event; absent data remains unknown, never synthesized."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    event_type: ModelStreamEventType
+    request_id: UUID
+    provider_id: str = Field(min_length=1, max_length=128)
+    model_id: str = Field(min_length=1, max_length=256)
+    text_delta: str | None = None
+    tool_call_delta: ToolCallDelta | None = None
+    usage: TokenUsage | None = None
+    finish_reason: FinishReason | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+
+
 class ModelRequest(BaseModel):
     """Normalized request passed to a provider adapter."""
 
@@ -33,6 +91,9 @@ class ModelRequest(BaseModel):
     tools: tuple[ProviderToolSchema, ...] = ()
     required_capabilities: frozenset[ModelCapability] = frozenset()
     response_schema: dict[str, JsonValue] | None = None
+    generation: GenerationSettings = Field(default_factory=GenerationSettings)
+    provider_options: dict[str, JsonValue] = Field(default_factory=dict)
+    estimated_input_tokens: int | None = Field(default=None, ge=0)
     timeout_seconds: float = Field(default=60.0, gt=0, allow_inf_nan=False)
     metadata: dict[str, JsonValue] = Field(default_factory=dict)
 
@@ -81,7 +142,7 @@ class ModelResponse(BaseModel):
 
 
 class ModelResponseChunk(BaseModel):
-    """Normalized text/tool delta for a future streaming adapter."""
+    """YANTRA-001 simple chunk contract, retained for compatibility."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -114,10 +175,11 @@ class ModelProvider(Protocol):
         ...
 
 
+@runtime_checkable
 class StreamingModelProvider(ModelProvider, Protocol):
     """Optional streaming protocol separate from the minimum provider contract."""
 
-    def stream(self, request: ModelRequest) -> AsyncIterator[ModelResponseChunk]:
+    def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
         """Stream normalized response deltas; consumer cancellation is propagated."""
         ...
 

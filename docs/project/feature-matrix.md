@@ -1,11 +1,12 @@
 # Feature Matrix
 
-YANTRA-001 adds a Python package and local contract foundation. Complete feature families remain incomplete; only the specific implemented portions are marked In Development. Verification is limited to recorded local checks; CI platforms are configured but not verified until GitHub Actions runs.
+YANTRA-001 adds a Python package and local contract foundation. YANTRA-002 adds the model gateway foundation. Complete feature families remain incomplete; only the specific implemented portions are marked In Development. Verification is limited to recorded local checks; CI platforms are configured but not verified until GitHub Actions runs.
 
 | Capability | Status | Target phase | Key boundary |
 |---|---|---|---|
 | Python contracts/state machine | In Development | 1 | Agent/message/budget/result/state/event contracts; no execution loop |
-| Provider abstraction | In Development | 1 | Async protocol and deterministic mock; no live adapter |
+| Model gateway (YANTRA-002) | In Development | 1 | Normalized adapters and mocked wire tests; provider behavior not live-verified |
+| Provider abstraction | In Development | 1 | Async protocol, deterministic mock, and explicit provider registry |
 | Tool registry | In Development | 1 | Typed definitions/validation/schema export; no authorization or execution |
 | Events and logging | In Development | 1 | Serializable events and local structured logger; no tracing backend |
 | PostgreSQL persistence | Proposed | 2 | Python calls versioned TypeScript service; not used in YANTRA-001 |
