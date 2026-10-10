@@ -1,0 +1,46 @@
+services:
+  postgres:
+    image: postgres:16.13-bookworm@sha256:472efd9a66f2b2f1a5aeb18b28de74332e6ef88c2b93a1a5d812fb6db67a5f60
+    container_name: yantra-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:?Set POSTGRES_ADMIN_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Set POSTGRES_ADMIN_PASSWORD in .env}
+      POSTGRES_DB: ${YANTRA_DB:?Set YANTRA_DB in .env}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+      YANTRA_DB: ${YANTRA_DB:?Set YANTRA_DB in .env}
+      YANTRA_MIGRATOR_USER: ${YANTRA_MIGRATOR_USER:?Set YANTRA_MIGRATOR_USER in .env}
+      YANTRA_MIGRATOR_PASSWORD: ${YANTRA_MIGRATOR_PASSWORD:?Set YANTRA_MIGRATOR_PASSWORD in .env}
+      YANTRA_APP_USER: ${YANTRA_APP_USER:?Set YANTRA_APP_USER in .env}
+      YANTRA_APP_PASSWORD: ${YANTRA_APP_PASSWORD:?Set YANTRA_APP_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-55432}:5432"
+    volumes:
+      - yantra_postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init/10-create-application-role.sh:/docker-entrypoint-initdb.d/10-create-application-role.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    mem_limit: 512m
+    cpus: 0.5
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - yantra_db
+
+volumes:
+  yantra_postgres_data:
+    name: yantra_postgres_data
+
+networks:
+  yantra_db:
+    name: yantra_db
+    driver: bridge

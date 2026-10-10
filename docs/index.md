@@ -27,7 +27,7 @@ Feature specifications are organized in [features](features/). Major systems inc
 
 - [Security](security/threat-model.md), [permissions](security/permission-system.md), [sandbox](security/sandbox-security.md), [prompt injection](security/prompt-injection.md), [browser security](security/browser-security.md)
 - [Reliability](reliability/fault-tolerance.md), [retries](reliability/retries.md), [cancellation](reliability/cancellation.md), [recovery](reliability/crash-recovery.md), [idempotency](reliability/idempotency.md)
-- [Deployment](deployment/local.md), [Docker](deployment/docker.md), [production gates](deployment/production.md), [observability](features/observability.md)
+- [Deployment](deployment/local.md), [Docker](deployment/docker.md), [YANTRA PostgreSQL runbook](deployment/yantra-postgresql.md), [production gates](deployment/production.md), [observability](features/observability.md)
 
 ## Integrations, research, and development
 

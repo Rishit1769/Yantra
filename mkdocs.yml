@@ -44,6 +44,7 @@ nav:
   - Security: security/threat-model.md
   - Reliability: reliability/fault-tolerance.md
   - Deployment: deployment/production.md
+  - PostgreSQL deployment: deployment/yantra-postgresql.md
   - Integrations:
       - NIRMAAN: integrations/nirmaan.md
       - MCP: integrations/mcp.md
