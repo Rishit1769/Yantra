@@ -35,6 +35,6 @@ Python SDK APIs; no additional runtime dependency.
 ## Priority
 P1.
 ## Implementation status
-YANTRA-002-V01 implements `yantra-smoke` with `argparse`, offline mock completion/stream/tool proposals, provider status, live model catalogs, and live completion/stream/tool-call normalization for Ollama and OpenCode Zen/Go. OpenCode inference requires `--allow-billable`. The CLI reads credential references through `CredentialManager`, writes no credentials or request data, and redacts known credential values before output. Broader agent, skills, session, trace, and evaluation commands remain unimplemented.
+YANTRA-002-V01 implements `yantra-smoke` with `argparse`, offline mock completion/stream/tool proposals, provider status, live model catalogs, and live completion/stream/tool-call normalization for Ollama and OpenCode Zen/Go. V05 adds bounded output-token controls and separate content/termination classifications. OpenCode inference requires `--allow-billable`. The CLI reads credential references through `CredentialManager`, writes no credentials or request data, and redacts known credential values before output. Broader agent, skills, session, trace, and evaluation commands remain unimplemented.
 ## Open questions
 Configuration profile format and command compatibility policy.

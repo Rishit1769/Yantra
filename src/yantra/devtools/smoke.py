@@ -10,6 +10,7 @@ import sys
 import time
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import NoReturn, cast
 from uuid import uuid4
 
@@ -54,6 +55,21 @@ _SMOKE_TOOL = ProviderToolSchema(
     },
 )
 _SAFE_SHAPE_LABEL = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
+_DEFAULT_OUTPUT_TOKENS = 128
+_MAX_SMOKE_OUTPUT_TOKENS = 4096
+
+
+class SmokeContentKind(StrEnum):
+    VISIBLE_TEXT = "visible_text"
+    REASONING_ONLY = "reasoning_only"
+    TOOL_CALL_ONLY = "tool_call_only"
+    EMPTY_OR_MALFORMED = "empty_or_malformed"
+
+
+class SmokeTerminationKind(StrEnum):
+    COMPLETED = "completed"
+    TRUNCATED = "truncated"
+    UNKNOWN = "unknown"
 
 
 @dataclass(slots=True)
@@ -182,7 +198,15 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="confirm this live inference request may incur charges",
     )
-    complete.add_argument("--max-output-tokens", type=int, default=128)
+    complete.add_argument(
+        "--max-output-tokens",
+        type=int,
+        default=_DEFAULT_OUTPUT_TOKENS,
+        help=(
+            "maximum generated tokens "
+            f"(default: {_DEFAULT_OUTPUT_TOKENS}; smoke cap: {_MAX_SMOKE_OUTPUT_TOKENS})"
+        ),
+    )
     return parser
 
 
@@ -296,6 +320,55 @@ def _print_tool_calls(calls: Sequence[ToolCall], secrets: Sequence[str] = ()) ->
         print(f"- {_redact(call.name, secrets)}({_redact(arguments, secrets)})")
 
 
+def _reasoning_present(message: Message) -> bool:
+    return any(
+        isinstance(extension.get("reasoning_content"), str) and bool(extension["reasoning_content"])
+        for extension in message.provider_extensions.values()
+    )
+
+
+def _content_kind(*, visible_text: bool, reasoning: bool, tool_call_count: int) -> SmokeContentKind:
+    if visible_text:
+        return SmokeContentKind.VISIBLE_TEXT
+    if tool_call_count:
+        return SmokeContentKind.TOOL_CALL_ONLY
+    if reasoning:
+        return SmokeContentKind.REASONING_ONLY
+    return SmokeContentKind.EMPTY_OR_MALFORMED
+
+
+def _termination_kind(reason: FinishReason | None) -> SmokeTerminationKind:
+    if reason == FinishReason.LENGTH:
+        return SmokeTerminationKind.TRUNCATED
+    if reason in {FinishReason.STOP, FinishReason.TOOL_CALLS, FinishReason.REFUSAL}:
+        return SmokeTerminationKind.COMPLETED
+    return SmokeTerminationKind.UNKNOWN
+
+
+def _print_outcome(
+    *,
+    protocol: str,
+    max_output_tokens: int | None,
+    content_kind: SmokeContentKind,
+    termination: SmokeTerminationKind,
+    visible_text: bool,
+    reasoning: bool,
+    tool_call_count: int,
+    inference_status: str,
+) -> None:
+    print(f"Protocol: {protocol}")
+    if max_output_tokens is not None:
+        print(f"Output token budget: {max_output_tokens}")
+    print(f"Inference status: {inference_status}")
+    print(f"Content kind: {content_kind.value}")
+    print(f"Termination: {termination.value}")
+    print(f"Visible text produced: {'yes' if visible_text else 'no'}")
+    print(f"Private reasoning: {'present, hidden' if reasoning else 'absent'}")
+    print(f"Tool proposals returned: {tool_call_count}")
+    if termination == SmokeTerminationKind.TRUNCATED:
+        print("Warning: the model exhausted its output-token budget before completing normally.")
+
+
 def _print_response_shape(metadata: dict[str, JsonValue]) -> None:
     shape = metadata.get("yantra_response_shape")
     if not isinstance(shape, dict):
@@ -325,23 +398,42 @@ def _print_response(
     result: GatewayResponse,
     *,
     elapsed_ms: float,
+    protocol: str = "unknown",
+    max_output_tokens: int | None = None,
     secrets: Sequence[str] = (),
     fixture: bool = False,
-) -> None:
+) -> int:
     response = result.response
     print(f"selected model: {_redact(result.selected_model, secrets)}")
     print(f"provider model: {_redact(response.model_id, secrets)}")
     print(f"finish reason: {response.finish_reason.value}")
     _print_response_shape(response.metadata)
     text = "".join(part.text for part in response.message.content)
+    reasoning = _reasoning_present(response.message)
+    content_kind = _content_kind(
+        visible_text=bool(text),
+        reasoning=reasoning,
+        tool_call_count=len(response.message.tool_calls),
+    )
+    _print_outcome(
+        protocol=protocol,
+        max_output_tokens=max_output_tokens,
+        content_kind=content_kind,
+        termination=_termination_kind(response.finish_reason),
+        visible_text=bool(text),
+        reasoning=reasoning,
+        tool_call_count=len(response.message.tool_calls),
+        inference_status="completed",
+    )
     if text:
-        print("normalized text:")
+        print("Visible assistant response:")
         print(_redact(text, secrets))
-    elif response.message.provider_extensions:
-        print("normalized text: none (provider metadata retained; details not displayed)")
+    else:
+        print("Visible assistant response: none")
     _print_tool_calls(response.message.tool_calls, secrets)
     print(_format_usage(response.usage, fixture=fixture))
     print(f"latency: {elapsed_ms:.1f} ms")
+    return int(content_kind == SmokeContentKind.EMPTY_OR_MALFORMED)
 
 
 def _offline_response(request: ModelRequest, *, tool_call: bool) -> ModelResponse:
@@ -394,10 +486,23 @@ async def _run_offline(args: argparse.Namespace) -> int:
     print("OFFLINE MOCK TEST: no provider or network request will be made")
     started = time.perf_counter()
     if args.stream:
-        return await _print_stream(gateway, request, "mock/smoke-test", started, fixture=True)
+        return await _print_stream(
+            gateway,
+            request,
+            "mock/smoke-test",
+            started,
+            protocol="mock",
+            max_output_tokens=16,
+            fixture=True,
+        )
     result = await gateway.complete(request)
-    _print_response(result, elapsed_ms=(time.perf_counter() - started) * 1000, fixture=True)
-    return 0
+    return _print_response(
+        result,
+        elapsed_ms=(time.perf_counter() - started) * 1000,
+        protocol="mock",
+        max_output_tokens=16,
+        fixture=True,
+    )
 
 
 async def _print_stream(
@@ -406,16 +511,21 @@ async def _print_stream(
     model: str,
     started: float,
     *,
+    protocol: str = "unknown",
+    max_output_tokens: int | None = None,
     secrets: Sequence[str] = (),
     fixture: bool = False,
 ) -> int:
     text_parts: list[str] = []
     tool_calls: dict[int, dict[str, str | None]] = {}
+    reasoning = False
     usage: TokenUsage | None = None
     finish_reason: FinishReason | None = None
     async for event in gateway.stream(request, model=model):
         if event.event_type == ModelStreamEventType.TEXT_DELTA and event.text_delta is not None:
             text_parts.append(event.text_delta)
+        elif event.event_type == ModelStreamEventType.REASONING_DELTA:
+            reasoning = True
         elif event.event_type == ModelStreamEventType.TOOL_CALL_DELTA:
             delta = event.tool_call_delta
             if delta is not None:
@@ -437,10 +547,7 @@ async def _print_stream(
             return 1
 
     elapsed_ms = (time.perf_counter() - started) * 1000
-    print("normalized streamed response:")
     text = "".join(text_parts)
-    if text:
-        print(_redact(text, secrets))
     normalized_calls: list[ToolCall] = []
     for index, call in sorted(tool_calls.items()):
         try:
@@ -456,11 +563,33 @@ async def _print_stream(
             )
         except (json.JSONDecodeError, ValueError):
             print("tool proposal arguments: incomplete or invalid JSON")
+    content_kind = _content_kind(
+        visible_text=bool(text),
+        reasoning=reasoning,
+        tool_call_count=len(normalized_calls),
+    )
+    termination = _termination_kind(finish_reason)
+    print("normalized streamed response:")
+    _print_outcome(
+        protocol=protocol,
+        max_output_tokens=max_output_tokens,
+        content_kind=content_kind,
+        termination=termination,
+        visible_text=bool(text),
+        reasoning=reasoning,
+        tool_call_count=len(normalized_calls),
+        inference_status="completed" if finish_reason is not None else "incomplete",
+    )
+    if text:
+        print("Visible assistant response:")
+        print(_redact(text, secrets))
+    else:
+        print("Visible assistant response: none")
     _print_tool_calls(normalized_calls, secrets)
     print(f"finish reason: {finish_reason.value if finish_reason else 'unknown'}")
     print(_format_usage(usage, fixture=fixture))
     print(f"latency: {elapsed_ms:.1f} ms")
-    return 0
+    return int(content_kind == SmokeContentKind.EMPTY_OR_MALFORMED or finish_reason is None)
 
 
 async def _execute(args: argparse.Namespace) -> int:
@@ -501,6 +630,13 @@ async def _execute(args: argparse.Namespace) -> int:
         catalog_entry = await runtime.catalog.get(args.model)
         if catalog_entry is None:
             raise YantraError("selected model was not found in the provider's live catalog")
+        if (
+            catalog_entry.max_output_tokens is not None
+            and args.max_output_tokens > catalog_entry.max_output_tokens
+        ):
+            raise YantraError(
+                "requested output-token budget exceeds the selected model's published limit"
+            )
         request_metadata: dict[str, JsonValue] = (
             {"session_id": str(uuid4())} if provider_id == "opencode-go" else {}
         )
@@ -542,15 +678,18 @@ async def _execute(args: argparse.Namespace) -> int:
                 request,
                 args.model,
                 started,
+                protocol=protocol,
+                max_output_tokens=args.max_output_tokens,
                 secrets=secrets,
             )
         result = await runtime.gateway.complete(request, model=args.model)
-        _print_response(
+        return _print_response(
             result,
             elapsed_ms=(time.perf_counter() - started) * 1000,
+            protocol=protocol,
+            max_output_tokens=args.max_output_tokens,
             secrets=secrets,
         )
-        return 0
     except ProviderError as exc:
         print(f"ERROR: {_provider_error_summary(exc, secrets)}", file=sys.stderr)
         return 1
@@ -579,8 +718,8 @@ def run_cli(argv: Sequence[str] | None = None) -> int:
             parser.error("complete requires a provider/model reference")
         if provider_id not in {"ollama", "opencode-zen", "opencode-go"}:
             parser.error("this smoke runner supports ollama, opencode-zen, and opencode-go")
-        if not 1 <= args.max_output_tokens <= 4096:
-            parser.error("--max-output-tokens must be between 1 and 4096")
+        if not 1 <= args.max_output_tokens <= _MAX_SMOKE_OUTPUT_TOKENS:
+            parser.error(f"--max-output-tokens must be between 1 and {_MAX_SMOKE_OUTPUT_TOKENS}")
         if provider_id != "ollama" and not args.allow_billable:
             parser.error("OpenCode inference requires explicit --allow-billable opt-in")
     return asyncio.run(_execute(args))

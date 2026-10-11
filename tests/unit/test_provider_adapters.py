@@ -26,6 +26,7 @@ from yantra.providers.adapters.opencode import (
 )
 from yantra.providers.adapters.openrouter import OpenRouterAdapter
 from yantra.providers.base import (
+    FinishReason,
     GenerationSettings,
     ModelProtocol,
     ModelRequest,
@@ -57,6 +58,7 @@ async def test_openai_responses_endpoint_normalizes_text_and_usage() -> None:
         assert req.headers["authorization"] == "Bearer test-openai-key"
         body = json.loads(req.content)
         assert body["model"] == "gpt-test"
+        assert body["max_output_tokens"] == 32
         return httpx.Response(
             200,
             headers={"x-request-id": "req-openai"},
@@ -216,6 +218,7 @@ async def test_anthropic_messages_preserves_tool_use_id_and_system_separation() 
         assert body["system"][0]["text"] == "be concise"
         assert all(message["role"] != "system" for message in body["messages"])
         assert body["tools"][0]["name"] == "demo.echo"
+        assert body["max_tokens"] == 128
         return httpx.Response(
             200,
             headers={"request-id": "msg-request"},
@@ -317,6 +320,7 @@ async def test_gemini_uses_key_header_and_model_specific_rest_path() -> None:
         assert req.url.path == "/v1beta/models/gemini-test:generateContent"
         assert req.headers["x-goog-api-key"] == "test-gemini-key"
         assert "key=" not in str(req.url)
+        assert json.loads(req.content)["generationConfig"]["maxOutputTokens"] == 32
         return httpx.Response(
             200,
             json={
@@ -467,6 +471,30 @@ def test_chat_reasoning_only_response_is_preserved_as_private_provider_metadata(
         "reasoning_content:string",
         "role:string",
     ]
+
+
+def test_chat_reasoning_only_response_without_optional_usage_is_valid() -> None:
+    response = parse_chat_response(
+        {
+            "model": "deepseek-v4.1-flash",
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "reasoning_content": "private reasoning",
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+        },
+        request("deepseek-v4.1-flash"),
+        provider_id="opencode-go",
+    )
+
+    assert response.usage is None
+    assert response.message.content == ()
+    assert response.finish_reason == FinishReason.STOP
 
 
 @pytest.mark.asyncio
@@ -875,6 +903,7 @@ async def test_ollama_local_chat_needs_no_key_and_does_not_download_models() -> 
         seen_paths.append(req.url.path)
         assert "authorization" not in req.headers
         if req.url.path == "/api/chat":
+            assert json.loads(req.content)["options"]["num_predict"] == 32
             return httpx.Response(
                 200,
                 json={

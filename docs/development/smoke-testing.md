@@ -15,9 +15,25 @@
 
 The runner supports local Ollama, OpenCode Zen, and OpenCode Go. Zen and Go use the existing `CredentialManager` with `env://` references by default; their references can instead be changed to `keyring://service/account`. The runner does not accept raw keys as arguments, write credentials, create configuration files, or persist requests and responses.
 
+Live `complete` defaults to a 128-token output budget and accepts `--max-output-tokens` from 1 through 4096. A lower published model-specific output cap is enforced before inference. The CLI never raises a requested limit or retries a truncated response.
+
+The common setting is mapped by the selected adapter:
+
+| Provider protocol | Request field |
+|---|---|
+| OpenAI Responses | `max_output_tokens` |
+| OpenAI-compatible Chat Completions | configured `max_tokens` or `max_completion_tokens` |
+| Anthropic Messages | `max_tokens` |
+| Gemini | `generationConfig.maxOutputTokens` |
+| Ollama | `options.num_predict` |
+
+For example, `uv run yantra-smoke complete opencode-go/deepseek-v4.1-flash --max-output-tokens 1024 --allow-billable` requests one completion with a 1024-token output ceiling; it does not retry or change models.
+
 OpenCode Go smoke inference assigns a fresh session ID to the single smoke conversation and sends it in `x-opencode-session`. Go model discovery and inference are separate operations: the official Go `/models` route can return a static catalog, while POST inference separately checks the model, API key, region/data policy, and billing limits. A successful catalog listing therefore does not prove subscription, workspace, region, or model-specific inference access. The CLI displays HTTP status, a validated provider error code, and a safe request ID when returned; it also reports method, OpenCode endpoint path, request field names, header names, and protocol without values. It never prints prompt content, credentials, or the upstream error body. Paths for non-OpenCode hosts are omitted from diagnostics.
 
-Non-streaming Chat Completions diagnostics, for successful as well as failed parsing, report only response field names and JSON types, choice count, finish reasons, and message/usage field shapes. They do not report response values, visible text, or private reasoning. A reasoning-only response is normalized into a provider extension and is not printed; refusal-only responses retain their visible refusal text; a genuinely empty response remains an error.
+Non-streaming Chat Completions diagnostics, for successful as well as failed parsing, report only response field names and JSON types, choice count, finish reasons, and message/usage field shapes. They do not report response values, visible text, or private reasoning. The CLI separates content kind (`visible_text`, `reasoning_only`, `tool_call_only`, or `empty_or_malformed`) from termination (`completed`, `truncated`, or `unknown`), so a response can be reasoning-only and truncated at the same time. Reasoning-only responses are normalized into a provider extension and not printed; the CLI says only whether private reasoning metadata is present. Refusal-only responses retain their visible refusal text; genuinely empty responses remain errors.
+
+`Inference status: completed` means the provider response was received and normalized; it does not guarantee a visible final answer. Consult `content_kind` and `termination` separately. `TRUNCATED` is reported without an automatic retry or model switch.
 
 ## macOS Setup
 

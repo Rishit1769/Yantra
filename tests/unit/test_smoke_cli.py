@@ -7,7 +7,15 @@ import pytest
 from yantra.core.contracts import ProviderCapabilities
 from yantra.core.errors import ProviderInvalidRequestError
 from yantra.core.messages import Message, MessageRole, TextContent
-from yantra.devtools.smoke import _print_response, _provider_error_summary, run_cli
+from yantra.devtools.smoke import (
+    SmokeContentKind,
+    SmokeTerminationKind,
+    _content_kind,
+    _print_response,
+    _provider_error_summary,
+    _termination_kind,
+    run_cli,
+)
 from yantra.providers.adapters.anthropic import AnthropicAdapter
 from yantra.providers.adapters.ollama import OllamaAdapter
 from yantra.providers.adapters.openai import OpenAIAdapter
@@ -36,6 +44,46 @@ def test_offline_stream_and_tool_proposal_do_not_execute_tools(capsys) -> None:
     assert "smoke_echo" in output
     assert '"text": "offline mock"' in output
     assert "no tools were executed" in output
+    assert "Content kind: tool_call_only" in output
+    assert "Termination: completed" in output
+
+
+@pytest.mark.parametrize(
+    ("visible", "reasoning", "tool_calls", "expected"),
+    [
+        (True, False, 0, SmokeContentKind.VISIBLE_TEXT),
+        (False, True, 0, SmokeContentKind.REASONING_ONLY),
+        (False, False, 1, SmokeContentKind.TOOL_CALL_ONLY),
+        (False, False, 0, SmokeContentKind.EMPTY_OR_MALFORMED),
+        (True, True, 1, SmokeContentKind.VISIBLE_TEXT),
+    ],
+)
+def test_smoke_content_classification_is_orthogonal_to_termination(
+    visible, reasoning, tool_calls, expected
+) -> None:
+    assert (
+        _content_kind(
+            visible_text=visible,
+            reasoning=reasoning,
+            tool_call_count=tool_calls,
+        )
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    ("finish_reason", "expected"),
+    [
+        (FinishReason.STOP, SmokeTerminationKind.COMPLETED),
+        (FinishReason.TOOL_CALLS, SmokeTerminationKind.COMPLETED),
+        (FinishReason.REFUSAL, SmokeTerminationKind.COMPLETED),
+        (FinishReason.LENGTH, SmokeTerminationKind.TRUNCATED),
+        (FinishReason.UNKNOWN, SmokeTerminationKind.UNKNOWN),
+        (None, SmokeTerminationKind.UNKNOWN),
+    ],
+)
+def test_smoke_termination_classification(finish_reason, expected) -> None:
+    assert _termination_kind(finish_reason) == expected
 
 
 def test_provider_listing_never_prints_environment_credential(monkeypatch, capsys) -> None:
@@ -77,6 +125,8 @@ def test_normalized_response_redacts_credential_canary(capsys) -> None:
     output = capsys.readouterr().out
     assert secret not in output
     assert "[REDACTED]" in output
+    assert "Content kind: visible_text" in output
+    assert "Termination: completed" in output
 
 
 def test_smoke_output_never_displays_private_reasoning_extension(capsys) -> None:
@@ -112,7 +162,9 @@ def test_smoke_output_never_displays_private_reasoning_extension(capsys) -> None
     _print_response(result, elapsed_ms=1)
 
     output = capsys.readouterr().out
-    assert "normalized text: none" in output
+    assert "Visible assistant response: none" in output
+    assert "Content kind: reasoning_only" in output
+    assert "Termination: truncated" in output
     assert "choice_count=1" in output
     assert "message_fields=content:null,reasoning_content:string" in output
     assert private_reasoning not in output
@@ -173,9 +225,16 @@ def test_live_opencode_smoke_uses_reference_and_redacts_response(monkeypatch, ca
     assert secret not in output
 
 
-def test_live_opencode_go_smoke_provides_a_session_id(monkeypatch, capsys) -> None:
+@pytest.mark.parametrize(
+    ("budget_args", "expected_budget"),
+    [((), 128), (("--max-output-tokens", "1024"), 1024)],
+)
+def test_live_opencode_go_smoke_provides_a_session_id_and_budget(
+    monkeypatch, capsys, budget_args, expected_budget
+) -> None:
     monkeypatch.setenv("OPENCODE_GO_API_KEY", "go-live-test-key")
     seen_metadata: dict[str, object] = {}
+    seen_budgets: list[int | None] = []
 
     async def list_models(_: OpenCodeGoAdapter) -> tuple[ModelCatalogEntry, ...]:
         return (
@@ -189,6 +248,7 @@ def test_live_opencode_go_smoke_provides_a_session_id(monkeypatch, capsys) -> No
 
     async def complete(_: OpenAIAdapter, request: ModelRequest) -> ModelResponse:
         seen_metadata.update(request.metadata)
+        seen_budgets.append(request.generation.max_output_tokens)
         return ModelResponse(
             request_id=request.request_id,
             provider_id="opencode-go",
@@ -197,17 +257,76 @@ def test_live_opencode_go_smoke_provides_a_session_id(monkeypatch, capsys) -> No
                 role=MessageRole.ASSISTANT,
                 content=(TextContent(text="mock Go response"),),
             ),
-            finish_reason=FinishReason.STOP,
+            finish_reason=FinishReason.LENGTH,
         )
 
     monkeypatch.setattr(OpenCodeGoAdapter, "list_models", list_models)
     monkeypatch.setattr(OpenAIAdapter, "complete", complete)
 
-    assert run_cli(["complete", "opencode-go/gpt-6-luna", "--allow-billable"]) == 0
+    assert run_cli(["complete", "opencode-go/gpt-6-luna", *budget_args, "--allow-billable"]) == 0
 
     assert "session_id" in seen_metadata
     UUID(str(seen_metadata["session_id"]))
-    assert "mock Go response" in capsys.readouterr().out
+    assert seen_budgets == [expected_budget]
+    output = capsys.readouterr().out
+    assert "mock Go response" in output
+    assert f"Output token budget: {expected_budget}" in output
+    assert "Content kind: visible_text" in output
+    assert "Termination: truncated" in output
+    assert "exhausted its output-token budget" in output
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "not-an-integer", "4097"])
+def test_cli_rejects_invalid_or_excessive_output_budgets(value) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        run_cli(
+            [
+                "complete",
+                "opencode-go/gpt-6-luna",
+                "--max-output-tokens",
+                value,
+                "--allow-billable",
+            ]
+        )
+
+    assert exit_info.value.code == 2
+
+
+def test_cli_enforces_catalog_output_limit_before_inference(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("OPENCODE_GO_API_KEY", "go-live-test-key")
+    calls = 0
+
+    async def list_models(_: OpenCodeGoAdapter) -> tuple[ModelCatalogEntry, ...]:
+        return (
+            ModelCatalogEntry(
+                provider_id="opencode-go",
+                model_id="gpt-6-luna",
+                protocol="openai_responses",
+                max_output_tokens=64,
+            ),
+        )
+
+    async def complete(_: OpenAIAdapter, request: ModelRequest) -> ModelResponse:
+        nonlocal calls
+        calls += 1
+        raise AssertionError("model request must be blocked by the catalog output cap")
+
+    monkeypatch.setattr(OpenCodeGoAdapter, "list_models", list_models)
+    monkeypatch.setattr(OpenAIAdapter, "complete", complete)
+
+    status = run_cli(
+        [
+            "complete",
+            "opencode-go/gpt-6-luna",
+            "--max-output-tokens",
+            "65",
+            "--allow-billable",
+        ]
+    )
+
+    assert status == 1
+    assert calls == 0
+    assert "published limit" in capsys.readouterr().err
 
 
 def test_cli_provider_error_summary_includes_safe_http_diagnostics() -> None:
