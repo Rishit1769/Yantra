@@ -13,6 +13,7 @@ from yantra.core.errors import (
 )
 from yantra.core.messages import Message, MessageRole, TextContent, ToolResult
 from yantra.providers.adapters.anthropic import AnthropicAdapter
+from yantra.providers.adapters.common import parse_chat_response
 from yantra.providers.adapters.deepseek import DeepSeekAdapter
 from yantra.providers.adapters.gemini import GeminiAdapter
 from yantra.providers.adapters.generic import GenericOpenAICompatibleAdapter
@@ -420,6 +421,170 @@ async def test_deepseek_uses_official_chat_path_and_model_id() -> None:
     finally:
         await http.aclose()
     assert response.message.content[0].text == "deepseek"
+
+
+def test_chat_reasoning_only_response_is_preserved_as_private_provider_metadata() -> None:
+    model_request = request("deepseek-v4.1-flash")
+    response = parse_chat_response(
+        {
+            "id": "deepseek-reasoning-only",
+            "model": "deepseek-v4.1-flash",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "reasoning_content": "private reasoning canary",
+                    },
+                    "finish_reason": "length",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 4,
+                "completion_tokens": 5,
+                "total_tokens": 9,
+                "completion_tokens_details": {"reasoning_tokens": 5},
+            },
+        },
+        model_request,
+        provider_id="opencode-go",
+    )
+
+    assert response.message.content == ()
+    assert response.message.tool_calls == ()
+    assert response.message.provider_extensions == {
+        "opencode-go.chat": {"reasoning_content": "private reasoning canary"}
+    }
+    assert response.finish_reason.value == "length"
+    assert response.usage is not None
+    assert response.usage.reasoning_tokens == 5
+    shape = response.metadata["yantra_response_shape"]
+    assert shape["choice_count"] == 1
+    assert shape["finish_reasons"] == ["length"]
+    assert shape["message_fields"] == [
+        "content:null",
+        "reasoning_content:string",
+        "role:string",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_chat_empty_assistant_response_still_fails_with_safe_shape_diagnostics() -> None:
+    def handler(req: httpx.Request) -> httpx.Response:
+        assert req.url.path == "/zen/go/v1/chat/completions"
+        assert req.headers["authorization"] == "Bearer go-test-key"
+        assert req.headers["x-opencode-session"] == "session-123"
+        return httpx.Response(
+            200,
+            json={
+                "id": "empty-response-id",
+                "model": "deepseek-v4.1-flash",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "reasoning_content": "",
+                            "tool_calls": [],
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 4, "completion_tokens": 0, "total_tokens": 4},
+            },
+        )
+
+    http = client("https://opencode.ai/zen/go/v1/", handler)
+    adapter = OpenCodeGoAdapter(
+        credential_manager=CredentialManager(environment={"OPENCODE_GO_API_KEY": "go-test-key"}),
+        client=http,
+    )
+    try:
+        with pytest.raises(ProviderProtocolError) as error_info:
+            await adapter.complete(
+                request("deepseek-v4.1-flash", metadata={"session_id": "session-123"})
+            )
+    finally:
+        await http.aclose()
+
+    error = error_info.value
+    assert error.message == "provider returned an empty assistant response"
+    assert error.provider_request_id == "empty-response-id"
+    assert error.response_field_types == (
+        "choices:array",
+        "id:string",
+        "model:string",
+        "usage:object",
+    )
+    assert error.choice_count == 1
+    assert error.finish_reasons == ("stop",)
+    assert error.message_field_types == (
+        "content:null",
+        "reasoning_content:string",
+        "role:string",
+        "tool_calls:array",
+    )
+    assert error.usage_field_types == (
+        "completion_tokens:number",
+        "prompt_tokens:number",
+        "total_tokens:number",
+    )
+    assert "empty-response-id" not in str(error)
+
+
+def test_chat_tool_only_response_remains_a_normalized_assistant_message() -> None:
+    response = parse_chat_response(
+        {
+            "model": "deepseek-v4.1-flash",
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call-1",
+                                "type": "function",
+                                "function": {"name": "smoke_echo", "arguments": '{"text":"hi"}'},
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+        },
+        request("deepseek-v4.1-flash"),
+        provider_id="opencode-go",
+    )
+
+    assert response.message.content == ()
+    assert response.message.tool_calls[0].name == "smoke_echo"
+    assert response.finish_reason.value == "tool_calls"
+
+
+def test_chat_refusal_only_response_normalizes_visible_refusal_text() -> None:
+    response = parse_chat_response(
+        {
+            "model": "deepseek-v4.1-flash",
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "refusal": "I cannot help with that request.",
+                    },
+                    "finish_reason": "content_filter",
+                }
+            ],
+        },
+        request("deepseek-v4.1-flash"),
+        provider_id="opencode-go",
+    )
+
+    assert response.message.content[0].text == "I cannot help with that request."
+    assert response.finish_reason.value == "refusal"
 
 
 @pytest.mark.asyncio

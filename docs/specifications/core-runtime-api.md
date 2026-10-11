@@ -14,7 +14,7 @@ Package import root is `yantra`; source uses `src/yantra`. Development setup: `u
 
 ## Messages
 
-`Message` is an immutable Pydantic model with roles `system`, `developer`, `user`, `assistant`, `tool`; `TextContent`; optional typed `ToolCall`/`ToolResult`; UUID, aware timestamp, generic JSON metadata, and explicitly qualified `provider_extensions`. Extra fields are forbidden. `to_json()` and `from_json()` use Pydantic's JSON serialization/validation. Tool arguments remain untrusted values; parsing them does not authorize anything.
+`Message` is an immutable Pydantic model with roles `system`, `developer`, `user`, `assistant`, `tool`; `TextContent`; optional typed `ToolCall`/`ToolResult`; UUID, aware timestamp, generic JSON metadata, and explicitly qualified `provider_extensions`. Assistant messages with no visible content/tool calls are allowed only when they carry non-empty provider-namespaced `reasoning_content`; that private reasoning remains metadata, not user-facing text. Extra fields are forbidden. `to_json()` and `from_json()` use Pydantic's JSON serialization/validation. Tool arguments remain untrusted values; parsing them does not authorize anything.
 
 ## Providers
 

@@ -20,12 +20,37 @@ _DIAGNOSTIC_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
 _DIAGNOSTIC_PATH_PATTERN = re.compile(
     r"^/zen/(?:go/)?v1/(?:responses|chat/completions|messages|models|systemone)$"
 )
+_RESPONSE_FINISH_REASONS = frozenset(
+    {
+        "stop",
+        "length",
+        "tool_calls",
+        "function_call",
+        "content_filter",
+        "insufficient_system_resource",
+        "aborted",
+        "error",
+        "server_error",
+        "max_tokens",
+    }
+)
 
 
 def _safe_diagnostic_token(value: str | None) -> str | None:
     if value is None or not _DIAGNOSTIC_TOKEN_PATTERN.fullmatch(value):
         return None
     return value
+
+
+def _safe_field_types(values: tuple[str, ...]) -> tuple[str, ...]:
+    fields: set[str] = set()
+    for value in values[:32]:
+        field, separator, json_type = value.partition(":")
+        safe_field = _safe_diagnostic_token(field)
+        safe_type = _safe_diagnostic_token(json_type) if separator else None
+        if safe_field is not None and safe_type is not None:
+            fields.add(f"{safe_field}:{safe_type}")
+    return tuple(sorted(fields))
 
 
 class YantraError(Exception):
@@ -83,6 +108,12 @@ class ProviderError(YantraError):
         self.endpoint_path: str | None = None
         self.request_header_names: tuple[str, ...] = ()
         self.request_body_fields: tuple[str, ...] = ()
+        self.response_field_types: tuple[str, ...] = ()
+        self.choice_count: int | None = None
+        self.choice_field_types: tuple[str, ...] = ()
+        self.finish_reasons: tuple[str, ...] = ()
+        self.message_field_types: tuple[str, ...] = ()
+        self.usage_field_types: tuple[str, ...] = ()
         super().__init__(message)
 
     def set_http_diagnostics(
@@ -123,6 +154,27 @@ class ProviderError(YantraError):
         )
         return self
 
+    def set_response_shape(
+        self,
+        *,
+        response_fields: tuple[str, ...],
+        choice_count: int | None,
+        choice_fields: tuple[str, ...] = (),
+        finish_reasons: tuple[str, ...] = (),
+        message_fields: tuple[str, ...] = (),
+        usage_fields: tuple[str, ...] = (),
+    ) -> ProviderError:
+        """Attach response structure only; values, text, and reasoning are excluded."""
+        self.response_field_types = _safe_field_types(response_fields)
+        self.choice_count = (
+            choice_count if choice_count is not None and 0 <= choice_count <= 1_000_000 else None
+        )
+        self.choice_field_types = _safe_field_types(choice_fields)
+        self.finish_reasons = tuple(sorted(set(finish_reasons) & _RESPONSE_FINISH_REASONS))
+        self.message_field_types = _safe_field_types(message_fields)
+        self.usage_field_types = _safe_field_types(usage_fields)
+        return self
+
     def clone(self) -> ProviderError:
         """Return a fresh exception preserving normalized provider metadata."""
         clone = type(self)(
@@ -138,6 +190,13 @@ class ProviderError(YantraError):
             path=self.endpoint_path,
             header_names=self.request_header_names,
             body_fields=self.request_body_fields,
+        ).set_response_shape(
+            response_fields=self.response_field_types,
+            choice_count=self.choice_count,
+            choice_fields=self.choice_field_types,
+            finish_reasons=self.finish_reasons,
+            message_fields=self.message_field_types,
+            usage_fields=self.usage_field_types,
         )
 
 
@@ -196,6 +255,14 @@ class ProviderRateLimitError(ProviderError):
             path=self.endpoint_path,
             header_names=self.request_header_names,
             body_fields=self.request_body_fields,
+        )
+        clone.set_response_shape(
+            response_fields=self.response_field_types,
+            choice_count=self.choice_count,
+            choice_fields=self.choice_field_types,
+            finish_reasons=self.finish_reasons,
+            message_fields=self.message_field_types,
+            usage_fields=self.usage_field_types,
         )
         return clone
 

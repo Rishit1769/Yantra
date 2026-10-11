@@ -79,6 +79,45 @@ def test_normalized_response_redacts_credential_canary(capsys) -> None:
     assert "[REDACTED]" in output
 
 
+def test_smoke_output_never_displays_private_reasoning_extension(capsys) -> None:
+    private_reasoning = "private-reasoning-canary"
+    response = ModelResponse(
+        request_id="8c5727a7-9c89-4358-9032-6618bdd184ac",
+        provider_id="opencode-go",
+        model_id="deepseek-v4.1-flash",
+        message=Message(
+            role=MessageRole.ASSISTANT,
+            provider_extensions={"opencode-go.chat": {"reasoning_content": private_reasoning}},
+        ),
+        finish_reason=FinishReason.LENGTH,
+        metadata={
+            "yantra_response_shape": {
+                "response_fields": ["choices:array", "model:string"],
+                "choice_count": 1,
+                "finish_reasons": ["length"],
+                "message_fields": ["content:null", "reasoning_content:string"],
+            }
+        },
+    )
+    result = GatewayResponse(
+        response=response,
+        selected_model="opencode-go/deepseek-v4.1-flash",
+        routing_decision=RoutingDecision(
+            selected_model="opencode-go/deepseek-v4.1-flash",
+            mode=RoutingMode.MANUAL,
+            reason="test",
+        ),
+    )
+
+    _print_response(result, elapsed_ms=1)
+
+    output = capsys.readouterr().out
+    assert "normalized text: none" in output
+    assert "choice_count=1" in output
+    assert "message_fields=content:null,reasoning_content:string" in output
+    assert private_reasoning not in output
+
+
 def test_raw_key_is_not_echoed_as_invalid_credential_reference(capsys) -> None:
     secret = "not-a-reference-secret"
     with pytest.raises(SystemExit) as exit_info:
@@ -182,6 +221,14 @@ def test_cli_provider_error_summary_includes_safe_http_diagnostics() -> None:
         header_names=("authorization", "x-opencode-session"),
         body_fields=("model", "messages", "max_tokens"),
     )
+    error.set_response_shape(
+        response_fields=("choices:array", "model:string"),
+        choice_count=1,
+        choice_fields=("finish_reason:string", "message:object"),
+        finish_reasons=("length",),
+        message_fields=("content:null", "reasoning_content:string"),
+        usage_fields=("completion_tokens:number", "prompt_tokens:number"),
+    )
 
     summary = _provider_error_summary(error)
 
@@ -191,6 +238,11 @@ def test_cli_provider_error_summary_includes_safe_http_diagnostics() -> None:
     assert "path=/zen/go/v1/chat/completions" in summary
     assert "body_fields=max_tokens,messages,model" in summary
     assert "header_names=authorization,x-opencode-session" in summary
+    assert "response_fields=choices:array,model:string" in summary
+    assert "choice_count=1" in summary
+    assert "finish_reasons=length" in summary
+    assert "message_fields=content:null,reasoning_content:string" in summary
+    assert "usage_fields=completion_tokens:number,prompt_tokens:number" in summary
     assert "hello" not in summary
 
 

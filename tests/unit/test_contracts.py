@@ -79,6 +79,19 @@ def test_message_tool_call_round_trips_with_explicit_extension() -> None:
         )
 
 
+def test_reasoning_only_assistant_message_remains_private_provider_metadata() -> None:
+    message = Message(
+        role=MessageRole.ASSISTANT,
+        provider_extensions={"deepseek.chat": {"reasoning_content": "private reasoning"}},
+    )
+
+    assert message.content == ()
+    assert message.tool_calls == ()
+    assert message.provider_extensions["deepseek.chat"]["reasoning_content"] == "private reasoning"
+    with pytest.raises(ValidationError, match="reasoning metadata"):
+        Message(role=MessageRole.ASSISTANT)
+
+
 def test_tool_result_has_explicit_typed_linkage() -> None:
     result = ToolResult(call_id="call-1", name="demo.echo", result={"text": "hello"})
     message = Message(role=MessageRole.TOOL, tool_result=result)

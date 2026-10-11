@@ -91,7 +91,15 @@ class Message(BaseModel):
             if not self.content:
                 raise ValueError(f"{self.role.value} messages require text content")
         elif self.role == MessageRole.ASSISTANT and not self.content and not self.tool_calls:
-            raise ValueError("assistant messages require content or tool calls")
+            has_private_reasoning = any(
+                isinstance(extension.get("reasoning_content"), str)
+                and bool(extension["reasoning_content"])
+                for extension in self.provider_extensions.values()
+            )
+            if not has_private_reasoning:
+                raise ValueError(
+                    "assistant messages require content, tool calls, or reasoning metadata"
+                )
         elif self.role == MessageRole.TOOL and not self.content and self.tool_result is None:
             raise ValueError("tool messages require content or a tool result")
         return self

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 import sys
 import time
 from collections.abc import AsyncIterator, Sequence
@@ -52,6 +53,7 @@ _SMOKE_TOOL = ProviderToolSchema(
         "additionalProperties": False,
     },
 )
+_SAFE_SHAPE_LABEL = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 
 
 @dataclass(slots=True)
@@ -231,6 +233,18 @@ def _provider_error_summary(error: ProviderError, secrets: Sequence[str] = ()) -
         diagnostics.append(f"body_fields={','.join(error.request_body_fields)}")
     if error.request_header_names:
         diagnostics.append(f"header_names={','.join(error.request_header_names)}")
+    if error.response_field_types:
+        diagnostics.append(f"response_fields={','.join(error.response_field_types)}")
+    if error.choice_count is not None:
+        diagnostics.append(f"choice_count={error.choice_count}")
+    if error.choice_field_types:
+        diagnostics.append(f"choice_fields={','.join(error.choice_field_types)}")
+    if error.finish_reasons:
+        diagnostics.append(f"finish_reasons={','.join(error.finish_reasons)}")
+    if error.message_field_types:
+        diagnostics.append(f"message_fields={','.join(error.message_field_types)}")
+    if error.usage_field_types:
+        diagnostics.append(f"usage_fields={','.join(error.usage_field_types)}")
     message = f"{error.message} ({', '.join(diagnostics)})"
     return _redact(message, secrets)
 
@@ -282,6 +296,31 @@ def _print_tool_calls(calls: Sequence[ToolCall], secrets: Sequence[str] = ()) ->
         print(f"- {_redact(call.name, secrets)}({_redact(arguments, secrets)})")
 
 
+def _print_response_shape(metadata: dict[str, JsonValue]) -> None:
+    shape = metadata.get("yantra_response_shape")
+    if not isinstance(shape, dict):
+        return
+    print("response shape (field names/types only):")
+    for key in (
+        "response_fields",
+        "choice_fields",
+        "finish_reasons",
+        "message_fields",
+        "usage_fields",
+    ):
+        value = shape.get(key)
+        if isinstance(value, list):
+            labels = [
+                item
+                for item in value
+                if isinstance(item, str) and _SAFE_SHAPE_LABEL.fullmatch(item)
+            ]
+            print(f"{key}={','.join(labels)}")
+    count = shape.get("choice_count")
+    if isinstance(count, int) and not isinstance(count, bool):
+        print(f"choice_count={count}")
+
+
 def _print_response(
     result: GatewayResponse,
     *,
@@ -293,10 +332,13 @@ def _print_response(
     print(f"selected model: {_redact(result.selected_model, secrets)}")
     print(f"provider model: {_redact(response.model_id, secrets)}")
     print(f"finish reason: {response.finish_reason.value}")
+    _print_response_shape(response.metadata)
     text = "".join(part.text for part in response.message.content)
     if text:
         print("normalized text:")
         print(_redact(text, secrets))
+    elif response.message.provider_extensions:
+        print("normalized text: none (provider metadata retained; details not displayed)")
     _print_tool_calls(response.message.tool_calls, secrets)
     print(_format_usage(response.usage, fixture=fixture))
     print(f"latency: {elapsed_ms:.1f} ms")

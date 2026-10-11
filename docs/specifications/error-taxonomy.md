@@ -5,3 +5,5 @@ Stable categories: `VALIDATION`, `UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`, `C
 Retryability is advisory and conditioned on operation idempotency and deadline. `AMBIGUOUS_EFFECT` must not be converted to success or blindly retried. Internal exceptions are logged with protected correlation and exposed as sanitized errors.
 
 Provider HTTP errors may expose the HTTP status, a syntax-validated provider error code, a syntax-validated request/correlation ID, and sanitized request-shape metadata (method, endpoint path for OpenCode, header names, and top-level JSON field names). Header values, prompt/body values, and arbitrary upstream response bodies/messages are never retained in these diagnostics.
+
+Chat response protocol errors and smoke output may additionally expose bounded response field names/types, choice count, allowlisted finish reasons, and message/usage field shapes. Response values, generated text, and private reasoning are excluded.

@@ -6,7 +6,7 @@ import json
 from collections.abc import AsyncIterator, Mapping
 from typing import Any, TypeGuard, cast
 
-from pydantic import JsonValue
+from pydantic import JsonValue, ValidationError
 
 from yantra.core.contracts import TokenUsage
 from yantra.core.errors import ProviderError, ProviderProtocolError, UnsupportedCapabilityError
@@ -26,6 +26,167 @@ def is_json_object(value: object) -> TypeGuard[Mapping[str, Any]]:
         return False
     candidate = cast(Mapping[Any, Any], value)
     return all(isinstance(key, str) for key in candidate)
+
+
+def _json_type(value: object) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, Mapping):
+        return "object"
+    return "unknown"
+
+
+def _field_types(value: Mapping[str, Any]) -> tuple[str, ...]:
+    fields: list[str] = []
+    for index, (key, item) in enumerate(value.items()):
+        if index >= 32:
+            break
+        fields.append(f"{key}:{_json_type(item)}")
+    return tuple(sorted(fields))
+
+
+def _chat_response_shape(
+    value: Mapping[str, Any],
+) -> tuple[
+    tuple[str, ...],
+    int | None,
+    tuple[str, ...],
+    tuple[str, ...],
+    tuple[str, ...],
+    tuple[str, ...],
+]:
+    choices_value = value.get("choices")
+    if not isinstance(choices_value, list):
+        usage = value.get("usage")
+        usage_fields = _field_types(usage) if is_json_object(usage) else ()
+        return _field_types(value), None, (), (), (), usage_fields
+    choices = cast(list[Any], choices_value)
+    reasons: list[str] = []
+    choice_fields: tuple[str, ...] = ()
+    message_fields: tuple[str, ...] = ()
+    for index, choice in enumerate(choices[:8]):
+        if not is_json_object(choice):
+            continue
+        if index == 0:
+            choice_fields = _field_types(choice)
+            message = choice.get("message")
+            if is_json_object(message):
+                message_fields = _field_types(message)
+        reason = choice.get("finish_reason")
+        if isinstance(reason, str):
+            reasons.append(reason)
+    usage = value.get("usage")
+    usage_fields = _field_types(usage) if is_json_object(usage) else ()
+    return (
+        _field_types(value),
+        len(choices),
+        choice_fields,
+        tuple(reasons),
+        message_fields,
+        usage_fields,
+    )
+
+
+def _chat_response_error(
+    message: str,
+    value: Mapping[str, Any],
+    *,
+    provider_id: str,
+    provider_request_id: str | None = None,
+) -> ProviderError:
+    error = ProviderProtocolError(message, provider_id=provider_id)
+    error.set_http_diagnostics(status=0, request_id=provider_request_id)
+    return _set_chat_response_shape(error, value)
+
+
+def _set_chat_response_shape(
+    error: ProviderError,
+    value: Mapping[str, Any],
+) -> ProviderError:
+    (
+        response_fields,
+        choice_count,
+        choice_fields,
+        reasons,
+        message_fields,
+        usage_fields,
+    ) = _chat_response_shape(value)
+    error.set_response_shape(
+        response_fields=response_fields,
+        choice_count=choice_count,
+        choice_fields=choice_fields,
+        finish_reasons=reasons,
+        message_fields=message_fields,
+        usage_fields=usage_fields,
+    )
+    return error
+
+
+def _chat_response_shape_metadata(value: Mapping[str, Any]) -> dict[str, JsonValue]:
+    fields, choice_count, choice_fields, reasons, message_fields, usage_fields = (
+        _chat_response_shape(value)
+    )
+    shape = ProviderError("response shape").set_response_shape(
+        response_fields=fields,
+        choice_count=choice_count,
+        choice_fields=choice_fields,
+        finish_reasons=reasons,
+        message_fields=message_fields,
+        usage_fields=usage_fields,
+    )
+    return {
+        "response_fields": list(shape.response_field_types),
+        "choice_count": shape.choice_count,
+        "choice_fields": list(shape.choice_field_types),
+        "finish_reasons": list(shape.finish_reasons),
+        "message_fields": list(shape.message_field_types),
+        "usage_fields": list(shape.usage_field_types),
+    }
+
+
+def parse_chat_response(
+    value: Mapping[str, Any],
+    request: ModelRequest,
+    *,
+    provider_id: str,
+    model_id: str | None = None,
+    provider_request_id: str | None = None,
+) -> ModelResponse:
+    """Normalize a chat response and attach value-free shape data to parse errors."""
+    response_id = value.get("id")
+    diagnostic_request_id = provider_request_id or (
+        response_id if isinstance(response_id, str) else None
+    )
+    try:
+        return _parse_chat_response(
+            value,
+            request,
+            provider_id=provider_id,
+            model_id=model_id,
+            provider_request_id=diagnostic_request_id,
+        )
+    except ProviderError as exc:
+        if not exc.response_field_types:
+            _set_chat_response_shape(exc, value)
+        if diagnostic_request_id is not None:
+            exc.set_http_diagnostics(status=0, request_id=diagnostic_request_id)
+        raise
+    except ValidationError:
+        error = _chat_response_error(
+            "provider chat response did not match the normalized response contract",
+            value,
+            provider_id=provider_id,
+            provider_request_id=provider_request_id,
+        )
+        raise error from None
 
 
 def _text_parts(content: object, *, provider_id: str) -> tuple[TextContent, ...]:
@@ -142,7 +303,7 @@ def usage_from_openai(value: object, *, provider_id: str) -> TokenUsage | None:
     )
 
 
-def parse_chat_response(
+def _parse_chat_response(
     value: Mapping[str, Any],
     request: ModelRequest,
     *,
@@ -152,49 +313,81 @@ def parse_chat_response(
 ) -> ModelResponse:
     choices = value.get("choices")
     if not isinstance(choices, list):
-        raise ProviderProtocolError(
-            "provider chat response contained no choices", provider_id=provider_id
+        raise _chat_response_error(
+            "provider chat response contained no choices",
+            value,
+            provider_id=provider_id,
+            provider_request_id=provider_request_id,
         )
     choice_records = cast(list[Any], choices)
     if not choice_records or not is_json_object(choice_records[0]):
-        raise ProviderProtocolError(
-            "provider chat response contained no choices", provider_id=provider_id
+        raise _chat_response_error(
+            "provider chat response contained no choices",
+            value,
+            provider_id=provider_id,
+            provider_request_id=provider_request_id,
         )
     choice = choice_records[0]
     source_message = choice.get("message")
     if not is_json_object(source_message):
-        raise ProviderProtocolError(
-            "provider chat response contained no message", provider_id=provider_id
+        raise _chat_response_error(
+            "provider chat response contained no message",
+            value,
+            provider_id=provider_id,
+            provider_request_id=provider_request_id,
         )
     blocks = _text_parts(source_message.get("content"), provider_id=provider_id)
+    refusal = source_message.get("refusal")
+    if not blocks and isinstance(refusal, str) and refusal:
+        blocks = (TextContent(text=refusal),)
+    reasoning_content = source_message.get("reasoning_content")
     tool_calls: list[ToolCall] = []
     raw_calls_value = source_message.get("tool_calls")
     if raw_calls_value is None:
         raw_calls_value = []
     if not isinstance(raw_calls_value, list):
-        raise ProviderProtocolError("provider tool calls were malformed", provider_id=provider_id)
+        raise _chat_response_error(
+            "provider tool calls were malformed",
+            value,
+            provider_id=provider_id,
+            provider_request_id=provider_request_id,
+        )
     raw_calls = cast(list[Any], raw_calls_value)
     for index, raw_call in enumerate(raw_calls):
         if not is_json_object(raw_call):
-            raise ProviderProtocolError("provider tool call was malformed", provider_id=provider_id)
+            raise _chat_response_error(
+                "provider tool call was malformed",
+                value,
+                provider_id=provider_id,
+                provider_request_id=provider_request_id,
+            )
         function = raw_call.get("function")
         if not is_json_object(function):
-            raise ProviderProtocolError(
-                "provider tool call function was malformed", provider_id=provider_id
+            raise _chat_response_error(
+                "provider tool call function was malformed",
+                value,
+                provider_id=provider_id,
+                provider_request_id=provider_request_id,
             )
         raw_arguments = function.get("arguments", "{}")
         if isinstance(raw_arguments, str):
             try:
                 arguments = json.loads(raw_arguments)
             except json.JSONDecodeError as exc:
-                raise ProviderProtocolError(
-                    "provider tool arguments were invalid JSON", provider_id=provider_id
+                raise _chat_response_error(
+                    "provider tool arguments were invalid JSON",
+                    value,
+                    provider_id=provider_id,
+                    provider_request_id=provider_request_id,
                 ) from exc
         else:
             arguments = raw_arguments
         if not is_json_object(arguments):
-            raise ProviderProtocolError(
-                "provider tool arguments were not an object", provider_id=provider_id
+            raise _chat_response_error(
+                "provider tool arguments were not an object",
+                value,
+                provider_id=provider_id,
+                provider_request_id=provider_request_id,
             )
         call_id = raw_call.get("id")
         if not isinstance(call_id, str) or not call_id:
@@ -202,27 +395,18 @@ def parse_chat_response(
             call_id = f"{request.request_id}-{index}"
         name = function.get("name")
         if not isinstance(name, str) or not name:
-            raise ProviderProtocolError("provider tool call has no name", provider_id=provider_id)
+            raise _chat_response_error(
+                "provider tool call has no name",
+                value,
+                provider_id=provider_id,
+                provider_request_id=provider_request_id,
+            )
         tool_calls.append(
             ToolCall(
                 call_id=call_id,
                 name=name,
                 arguments=cast(dict[str, JsonValue], dict(arguments)),
             )
-        )
-    if not blocks and not tool_calls:
-        raise ProviderProtocolError(
-            "provider returned an empty assistant response", provider_id=provider_id
-        )
-    message = Message(role=MessageRole.ASSISTANT, content=blocks, tool_calls=tuple(tool_calls))
-    reasoning_content = source_message.get("reasoning_content")
-    if isinstance(reasoning_content, str):
-        message = message.model_copy(
-            update={
-                "provider_extensions": {
-                    f"{provider_id}.chat": {"reasoning_content": reasoning_content}
-                }
-            }
         )
     reason = choice.get("finish_reason")
     finish_map = {
@@ -231,12 +415,42 @@ def parse_chat_response(
         "length": FinishReason.LENGTH,
         "content_filter": FinishReason.REFUSAL,
     }
+    if not blocks and not tool_calls:
+        reasoning_only = (
+            isinstance(reasoning_content, str)
+            and bool(reasoning_content)
+            and isinstance(reason, str)
+            and reason in {"stop", "length"}
+        )
+        if not reasoning_only:
+            raise _chat_response_error(
+                "provider returned an empty assistant response",
+                value,
+                provider_id=provider_id,
+                provider_request_id=provider_request_id,
+            )
+    message = Message(
+        role=MessageRole.ASSISTANT,
+        content=blocks,
+        tool_calls=tuple(tool_calls),
+        provider_extensions=(
+            {f"{provider_id}.chat": {"reasoning_content": reasoning_content}}
+            if isinstance(reasoning_content, str)
+            else {}
+        ),
+    )
     finish = (
-        finish_map.get(reason, FinishReason.UNKNOWN)
+        FinishReason.REFUSAL
+        if isinstance(refusal, str) and refusal and reason in (None, "stop")
+        else finish_map.get(reason, FinishReason.UNKNOWN)
         if isinstance(reason, str)
         else FinishReason.UNKNOWN
     )
-    usage = usage_from_openai(value.get("usage"), provider_id=provider_id)
+    try:
+        usage = usage_from_openai(value.get("usage"), provider_id=provider_id)
+    except ProviderProtocolError as exc:
+        exc.set_http_diagnostics(status=0, request_id=provider_request_id)
+        raise _set_chat_response_shape(exc, value) from exc
     response_id = value.get("id")
     return ModelResponse(
         request_id=request.request_id,
@@ -250,7 +464,8 @@ def parse_chat_response(
         metadata={
             "system_fingerprint": value.get("system_fingerprint")
             if isinstance(value.get("system_fingerprint"), str)
-            else None
+            else None,
+            "yantra_response_shape": _chat_response_shape_metadata(value),
         },
     )
 
