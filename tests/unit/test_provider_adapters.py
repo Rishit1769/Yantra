@@ -4,14 +4,16 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
-from yantra.core.contracts import ModelCapability
+from yantra.core.contracts import ModelCapability, ProviderCapabilities
 from yantra.core.errors import (
     ProviderAuthenticationError,
     ProviderInvalidRequestError,
     ProviderProtocolError,
     ProviderTimeoutError,
+    UnsupportedCapabilityError,
 )
 from yantra.core.messages import Message, MessageRole, TextContent, ToolResult
+from yantra.core.tools_schema import ProviderToolSchema
 from yantra.providers.adapters.anthropic import AnthropicAdapter
 from yantra.providers.adapters.common import parse_chat_response
 from yantra.providers.adapters.deepseek import DeepSeekAdapter
@@ -32,7 +34,9 @@ from yantra.providers.base import (
     ModelRequest,
     ModelStreamEventType,
 )
+from yantra.providers.gateway import ModelGateway
 from yantra.providers.http import validate_endpoint
+from yantra.providers.registry import ProviderRegistry
 from yantra.security.credentials import CredentialManager
 
 
@@ -592,6 +596,79 @@ def test_chat_tool_only_response_remains_a_normalized_assistant_message() -> Non
     assert response.finish_reason.value == "tool_calls"
 
 
+def test_chat_text_and_tool_call_response_preserves_both_parts() -> None:
+    response = parse_chat_response(
+        {
+            "model": "deepseek-v4.1-flash",
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "I will propose a tool call.",
+                        "tool_calls": [
+                            {
+                                "id": "call-text-tool",
+                                "type": "function",
+                                "function": {
+                                    "name": "smoke_echo",
+                                    "arguments": '{"text":"hi"}',
+                                },
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+        },
+        request("deepseek-v4.1-flash"),
+        provider_id="opencode-go",
+    )
+
+    assert response.message.content[0].text == "I will propose a tool call."
+    assert response.message.tool_calls[0].call_id == "call-text-tool"
+
+
+def test_chat_malformed_tool_arguments_remain_protocol_error_without_echo() -> None:
+    raw_argument_canary = "private malformed arguments"
+    response = {
+        "model": "deepseek-v4.1-flash",
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call-invalid",
+                            "type": "function",
+                            "function": {
+                                "name": "smoke_echo",
+                                "arguments": raw_argument_canary,
+                            },
+                        }
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            }
+        ],
+    }
+
+    with pytest.raises(ProviderProtocolError) as error_info:
+        parse_chat_response(
+            response,
+            request("deepseek-v4.1-flash"),
+            provider_id="opencode-go",
+        )
+
+    assert error_info.value.message == "provider tool arguments were invalid JSON"
+    assert raw_argument_canary not in str(error_info.value)
+    assert error_info.value.message_field_types == (
+        "content:null",
+        "role:string",
+        "tool_calls:array",
+    )
+
+
 def test_chat_refusal_only_response_normalizes_visible_refusal_text() -> None:
     response = parse_chat_response(
         {
@@ -835,6 +912,260 @@ async def test_opencode_go_uses_separate_endpoint_key_and_session_header() -> No
         await http.aclose()
     assert response.provider_id == "opencode-go"
     assert models[0].model_id == "deepseek-flash"
+
+
+@pytest.mark.asyncio
+async def test_opencode_go_unknown_tool_capability_stays_blocked_before_inference() -> None:
+    post_calls = 0
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        nonlocal post_calls
+        assert req.headers["authorization"] == "Bearer go-test-key"
+        if req.method == "GET":
+            return httpx.Response(
+                200,
+                json={"data": [{"id": "deepseek-v4.1-flash"}, {"id": "deepseek-v4-pro"}]},
+            )
+        post_calls += 1
+        return httpx.Response(500)
+
+    http = client("https://opencode.ai/zen/go/v1/", handler)
+    adapter = OpenCodeGoAdapter(
+        credential_manager=CredentialManager(environment={"OPENCODE_GO_API_KEY": "go-test-key"}),
+        client=http,
+    )
+    registry = ProviderRegistry()
+    registry.register(adapter)
+    gateway = ModelGateway(registry)
+    schema = ProviderToolSchema(
+        name="smoke_echo",
+        description="Echo text",
+        parameters={"type": "object", "properties": {"text": {"type": "string"}}},
+    )
+    model_request = ModelRequest(
+        model_id="deepseek-v4.1-flash",
+        messages=(Message(role=MessageRole.USER, content=(TextContent(text="hello"),)),),
+        tools=(schema,),
+        required_capabilities=frozenset({ModelCapability.TOOL_CALLING}),
+    )
+    try:
+        models = await gateway.catalog.list_models("opencode-go")
+        assert {entry.model_id: entry.capabilities.tool_calling for entry in models} == {
+            "deepseek-v4.1-flash": None,
+            "deepseek-v4-pro": None,
+        }
+        for model_id in ("deepseek-v4.1-flash", "deepseek-v4-pro"):
+            with pytest.raises(UnsupportedCapabilityError, match="does not declare"):
+                await gateway.complete(
+                    model_request.model_copy(update={"model_id": model_id}),
+                    model=f"opencode-go/{model_id}",
+                )
+    finally:
+        await adapter.aclose()
+        await http.aclose()
+
+    assert post_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_opencode_go_model_scoped_override_allows_mocked_tool_round_trip() -> None:
+    schema = ProviderToolSchema(
+        name="smoke_echo",
+        description="Echo text",
+        parameters={
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+            "additionalProperties": False,
+        },
+    )
+    model_request = ModelRequest(
+        model_id="deepseek-v4.1-flash",
+        messages=(Message(role=MessageRole.USER, content=(TextContent(text="hello"),)),),
+        tools=(schema,),
+        required_capabilities=frozenset({ModelCapability.TOOL_CALLING}),
+        provider_options={"tool_choice": "required"},
+        generation=GenerationSettings(max_output_tokens=32),
+        metadata={"session_id": "session-tool-test"},
+    )
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        assert req.headers["authorization"] == "Bearer go-test-key"
+        if req.method == "GET":
+            return httpx.Response(
+                200,
+                json={"data": [{"id": "deepseek-v4.1-flash"}, {"id": "deepseek-v4-pro"}]},
+            )
+        assert req.url.path == "/zen/go/v1/chat/completions"
+        assert req.headers["x-opencode-session"] == "session-tool-test"
+        assert json.loads(req.content) == {
+            "model": "deepseek-v4.1-flash",
+            "messages": [{"role": "user", "content": "hello"}],
+            "max_tokens": 32,
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "smoke_echo",
+                        "description": "Echo text",
+                        "parameters": schema.parameters,
+                    },
+                }
+            ],
+            "tool_choice": "required",
+        }
+        return httpx.Response(
+            200,
+            json={
+                "id": "tool-response",
+                "model": "deepseek-v4.1-flash",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "call-smoke-1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "smoke_echo",
+                                        "arguments": '{"text":"normalized"}',
+                                    },
+                                }
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+                "usage": {"prompt_tokens": 4, "completion_tokens": 3, "total_tokens": 7},
+            },
+        )
+
+    http = client("https://opencode.ai/zen/go/v1/", handler)
+    adapter = OpenCodeGoAdapter(
+        credential_manager=CredentialManager(environment={"OPENCODE_GO_API_KEY": "go-test-key"}),
+        client=http,
+        capability_overrides={"deepseek-v4.1-flash": ProviderCapabilities(tool_calling=True)},
+    )
+    registry = ProviderRegistry()
+    registry.register(adapter)
+    gateway = ModelGateway(registry)
+    try:
+        models = await gateway.catalog.list_models("opencode-go")
+        capabilities = {entry.model_id: entry.capabilities.tool_calling for entry in models}
+        assert capabilities == {"deepseek-v4.1-flash": True, "deepseek-v4-pro": None}
+        result = await gateway.complete(model_request, model="opencode-go/deepseek-v4.1-flash")
+    finally:
+        await adapter.aclose()
+        await http.aclose()
+
+    call = result.response.message.tool_calls[0]
+    assert (call.call_id, call.name, call.arguments) == (
+        "call-smoke-1",
+        "smoke_echo",
+        {"text": "normalized"},
+    )
+    assert result.response.message.content == ()
+    assert result.response.finish_reason == FinishReason.TOOL_CALLS
+    assert result.response.usage is not None
+    assert result.response.usage.total_tokens == 7
+
+
+@pytest.mark.asyncio
+async def test_opencode_go_chat_stream_normalizes_tool_call_deltas() -> None:
+    schema = ProviderToolSchema(
+        name="smoke_echo",
+        description="Echo text",
+        parameters={"type": "object", "properties": {"text": {"type": "string"}}},
+    )
+    model_request = ModelRequest(
+        model_id="deepseek-v4.1-flash",
+        messages=(Message(role=MessageRole.USER, content=(TextContent(text="hello"),)),),
+        tools=(schema,),
+        required_capabilities=frozenset({ModelCapability.TOOL_CALLING}),
+        generation=GenerationSettings(max_output_tokens=32),
+        metadata={"session_id": "stream-tool-session"},
+    )
+    chunks = [
+        {
+            "id": "stream-tool-1",
+            "model": "deepseek-v4.1-flash",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "call-stream-tool",
+                                "type": "function",
+                                "function": {"name": "smoke_echo", "arguments": ""},
+                            }
+                        ]
+                    },
+                    "finish_reason": None,
+                }
+            ],
+        },
+        {
+            "id": "stream-tool-1",
+            "model": "deepseek-v4.1-flash",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "function": {"arguments": '{"text":"streamed"}'},
+                            }
+                        ]
+                    },
+                    "finish_reason": None,
+                }
+            ],
+        },
+        {
+            "id": "stream-tool-1",
+            "model": "deepseek-v4.1-flash",
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}],
+            "usage": {"prompt_tokens": 4, "completion_tokens": 3, "total_tokens": 7},
+        },
+    ]
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        assert req.url.path == "/zen/go/v1/chat/completions"
+        assert req.headers["x-opencode-session"] == "stream-tool-session"
+        body = json.loads(req.content)
+        assert body["tools"][0]["function"]["name"] == "smoke_echo"
+        assert body["stream"] is True
+        assert body["stream_options"] == {"include_usage": True}
+        data = "".join(f"data: {json.dumps(chunk)}\n\n" for chunk in chunks)
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=data + "data: [DONE]\n\n",
+        )
+
+    http = client("https://opencode.ai/zen/go/v1/", handler)
+    adapter = OpenCodeGoAdapter(
+        credential_manager=CredentialManager(environment={"OPENCODE_GO_API_KEY": "go-test-key"}),
+        client=http,
+    )
+    try:
+        events = [event async for event in adapter.stream(model_request)]
+    finally:
+        await adapter.aclose()
+        await http.aclose()
+
+    tool_deltas = [event.tool_call_delta for event in events if event.tool_call_delta is not None]
+    assert tool_deltas[0].call_id == "call-stream-tool"
+    assert tool_deltas[-1].arguments_delta == '{"text":"streamed"}'
+    assert any(event.event_type == ModelStreamEventType.RESPONSE_COMPLETED for event in events)
+    assert events[-1].usage is not None
+    assert events[-1].usage.total_tokens == 7
 
 
 @pytest.mark.asyncio
