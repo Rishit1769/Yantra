@@ -4,7 +4,7 @@
 
 ## Package and installation
 
-Package import root is `yantra`; source uses `src/yantra`. Development setup: `uv sync --all-groups`. The package requires Python 3.12+ and Pydantic v2. Version is currently `0.1.0`. No package-index release is published, and license selection remains unresolved.
+Package import root is `yantra`; source uses `src/yantra`. Development setup: `uv sync --all-groups`. The package requires Python 3.12+ and Pydantic v2. Version is currently `0.1.0`. No package-index release is published. YANTRA is licensed under Apache-2.0; see [LICENSE](../../LICENSE).
 
 ## Agent and budget
 

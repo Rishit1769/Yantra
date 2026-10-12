@@ -2,7 +2,7 @@
 
 **Build Agents. Bring Any Model. Own the Execution.**
 
-YANTRA is a model-agnostic AI agent harness and orchestration framework intended for open-source development. Its architecture aims to give developers explicit control over agent execution, tools, skills, state, persistence, security policy, and observability without binding the framework to one model vendor or application. License selection remains unresolved.
+YANTRA is a model-agnostic AI agent harness and orchestration framework intended for open-source development. Its architecture aims to give developers explicit control over agent execution, tools, skills, state, persistence, security policy, and observability without binding the framework to one model vendor or application.
 
 > **Status:** YANTRA-001 core contracts and the YANTRA-002 model gateway foundation are implemented. YANTRA-002 includes provider adapters, normalized completion/streaming, explicit routing policy, credential references, mocked HTTP protocol tests, a model catalog, and a limited developer smoke CLI. Provider behavior has not been live-verified, Windows CI has not run, and the agent execution loop, general-purpose CLI, persistence integration, and release remain unimplemented. This is not production-ready.
 
@@ -82,7 +82,7 @@ sequenceDiagram
 | Infrastructure | Docker, GitHub Actions, PostgreSQL; optional Redis/container workers |
 | Future inspector | Next.js, TypeScript, Tailwind CSS; never required by SDK |
 
-Dependencies are defined in `pyproject.toml`; HTTPX supports the model gateway and keyring is an optional credentials extra. The project license is **unselected**; no license file or reuse grant is implied.
+Dependencies are defined in `pyproject.toml`; HTTPX supports the model gateway and keyring is an optional credentials extra. YANTRA is licensed under Apache-2.0.
 
 ## Model and capability architecture
 
@@ -124,3 +124,11 @@ Python source is under `src/yantra`; unit tests are under `tests`; packaging/too
 ## Roadmap and contribution
 
 Milestones proceed from packaging/contracts/runtime to durability, skills and secure tools, orchestration, and developer platform. Each milestone has gates; checklist completion alone does not establish production readiness. See [ROADMAP.md](ROADMAP.md), [contributing](CONTRIBUTING.md), [governance](GOVERNANCE.md), and [security reporting](SECURITY.md). NIRMAAN is a separate downstream application and must consume a versioned public YANTRA SDK; see [integration boundary](docs/integrations/nirmaan.md).
+
+## License
+
+Copyright 2026 Rishit Singh.
+
+YANTRA is licensed under the Apache License, Version 2.0.
+
+See the [LICENSE](LICENSE) file for the complete license terms.

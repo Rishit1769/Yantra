@@ -10,4 +10,4 @@ uv build --wheel
 
 The model gateway uses HTTPX, included in the base package. OS keyring support is optional; install it with `uv sync --extra credentials` when secure credential storage is needed. The mock quickstart makes no network requests; gateway adapters do when called.
 
-The project license remains unresolved, so do not redistribute the built wheel as an openly licensed release. A published release requires a license decision, supported artifact provenance, clean-environment installation tests, and a versioned compatibility policy.
+YANTRA is licensed under the Apache License, Version 2.0; see the [LICENSE](../../LICENSE) file. A published release still requires supported artifact provenance, clean-environment installation tests, and a versioned compatibility policy.

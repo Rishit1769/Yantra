@@ -7,6 +7,8 @@ name = "yantra"
 version = "0.1.0"
 description = "A model-agnostic AI agent runtime foundation"
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -39,7 +41,7 @@ dev = [
 packages = ["src/yantra"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/yantra", "tests", "docs", "README.md", "pyproject.toml"]
+include = ["src/yantra", "tests", "docs", "README.md", "pyproject.toml", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
