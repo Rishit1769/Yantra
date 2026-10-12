@@ -86,7 +86,7 @@ Dependencies are defined in `pyproject.toml`; HTTPX supports the model gateway a
 
 ## Model and capability architecture
 
-Adapters normalize transport, authentication, streaming chunks, usage, and provider errors into versioned YANTRA contracts. The current gateway includes OpenAI, Anthropic, Gemini, DeepSeek, Ollama, OpenRouter, OpenCode Zen/Go, generic OpenAI-compatible, and generic protocol adapters. Capabilities are negotiated per model/deployment; unknown support stays unknown. Mocked HTTP tests do not establish live provider compatibility. See [model gateway](docs/architecture/model-gateway.md) and [provider contract](docs/specifications/model-provider-contract.md).
+Adapters normalize transport, authentication, streaming chunks, usage, and provider errors into versioned YANTRA contracts. The current gateway includes OpenAI, Anthropic, Gemini, DeepSeek, Ollama, OpenRouter, OpenCode Zen/Go, and configurable OpenAI Chat Completions-compatible endpoints. Capabilities are negotiated per model/deployment; unknown support stays unknown. Mocked HTTP tests do not establish live provider compatibility. See [model gateway](docs/architecture/model-gateway.md) and [provider contract](docs/specifications/model-provider-contract.md).
 
 ## Tools and skills
 

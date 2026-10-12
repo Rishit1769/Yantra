@@ -16,6 +16,7 @@ from urllib.parse import urlsplit
 import httpx
 from pydantic import SecretStr
 
+from yantra._version import __version__
 from yantra.core.errors import (
     CredentialUnavailableError,
     ProviderAuthenticationError,
@@ -105,7 +106,7 @@ class HttpxProvider:
         self._credential_override: ContextVar[SecretStr | None] = ContextVar(
             f"yantra_credential_{id(self)}", default=None
         )
-        self.user_agent = "yantra/0.2.0"
+        self.user_agent = f"yantra/{__version__}"
         self._owns_client = client is None
         self.client = client or httpx.AsyncClient(
             base_url=self.base_url,

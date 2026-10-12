@@ -39,7 +39,7 @@ The asynchronous call is `await provider.complete(request)`. YANTRA-001's determ
 
 `ModelGateway` wraps an explicit `ProviderRegistry`, resolves `provider/model` references, validates required capabilities, applies `ModelRoutingPolicy`, and returns a `GatewayResponse` with actual route/fallback metadata and available cost information. `complete()` supports a manually selected model by default; automatic routing requires a catalog plus a current digest-bound policy approval. `stream()` yields normalized `ModelStreamEvent` values and will not switch providers after yielding an event. Catalog listing and credential validation are separate from inference entitlement.
 
-Provider adapters exist for OpenAI, Anthropic, Gemini, DeepSeek, Ollama, OpenRouter, OpenCode Zen/Go, OpenAI-compatible endpoints, and a generic protocol adapter. Their HTTP behavior is covered by mocked transports only; this does not verify current live API behavior. Cost enforcement is a preflight estimate based on explicit input/output token bounds and provider pricing metadata, not a guaranteed billing cap. Credential smoke tests can incur charges and require explicit opt-in.
+Provider adapters exist for OpenAI, Anthropic, Gemini, DeepSeek, Ollama, OpenRouter, OpenCode Zen/Go, and configurable OpenAI Chat Completions-compatible endpoints. Their HTTP behavior is covered by mocked transports only; this does not verify current live API behavior. Cost enforcement is a preflight estimate based on explicit input/output token bounds and provider pricing metadata, not a guaranteed billing cap. Credential smoke tests can incur charges and require explicit opt-in.
 
 ## Tools and registry
 

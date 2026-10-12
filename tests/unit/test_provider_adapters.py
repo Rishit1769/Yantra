@@ -4,6 +4,7 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
+from yantra import __version__
 from yantra.core.contracts import ModelCapability, ProviderCapabilities
 from yantra.core.errors import (
     ProviderAuthenticationError,
@@ -825,7 +826,7 @@ async def test_opencode_go_gpt_luna_responses_request_uses_session_header() -> N
         assert req.url.path == "/zen/go/v1/responses"
         assert req.headers["authorization"] == "Bearer go-test-key"
         assert req.headers["x-opencode-session"] == "session-gpt"
-        assert req.headers["user-agent"] == "yantra/0.2.0"
+        assert req.headers["user-agent"] == f"yantra/{__version__}"
         assert json.loads(req.content) == {
             "model": "gpt-6-luna",
             "input": [
