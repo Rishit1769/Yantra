@@ -31,6 +31,7 @@ from yantra.core.errors import (
     ProviderTimeoutError,
     ProviderUnavailableError,
 )
+from yantra.providers._transport import create_provider_transport
 from yantra.providers.base import ModelRequest
 from yantra.security.credentials import CredentialManager
 
@@ -73,7 +74,10 @@ def validate_endpoint(
 
 
 class HttpxProvider:
-    """Base class for adapters with bounded responses, disabled redirects, and typed failures."""
+    """Base class for bounded provider HTTP.
+
+    Caller-supplied clients own their transport and must enforce their own endpoint policy.
+    """
 
     def __init__(
         self,
@@ -108,14 +112,22 @@ class HttpxProvider:
         )
         self.user_agent = f"yantra/{__version__}"
         self._owns_client = client is None
-        self.client = client or httpx.AsyncClient(
-            base_url=self.base_url,
-            headers={"User-Agent": self.user_agent},
-            follow_redirects=False,
-            trust_env=False,
-            timeout=httpx.Timeout(60.0, connect=10.0),
-            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
-        )
+        if client is None:
+            transport = create_provider_transport(
+                self.base_url,
+                allow_private_network=allow_private_network,
+            )
+            self.client = httpx.AsyncClient(
+                base_url=self.base_url,
+                headers={"User-Agent": self.user_agent},
+                follow_redirects=False,
+                trust_env=False,
+                timeout=httpx.Timeout(60.0, connect=10.0),
+                transport=transport,
+            )
+        else:
+            # Injected clients own their transport and must enforce their own egress policy.
+            self.client = client
 
     @property
     def provider_id(self) -> str:

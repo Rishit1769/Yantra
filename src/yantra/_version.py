@@ -1,8 +1,3 @@
-"""Package version shared by the public API and provider transport."""
+"""Single source of the YANTRA package version."""
 
-from importlib.metadata import PackageNotFoundError, version
-
-try:
-    __version__ = version("yantra")
-except PackageNotFoundError:
-    __version__ = "0.1.0"
+__version__ = "0.2.0"

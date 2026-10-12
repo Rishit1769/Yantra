@@ -1,10 +1,10 @@
 # YANTRA (यन्त्र)
 
-**Build Agents. Bring Any Model. Own the Execution.**
+**Build Agents. Connect Models. Own the Execution.**
 
 YANTRA is a model-agnostic AI agent harness and orchestration framework intended for open-source development. Its architecture aims to give developers explicit control over agent execution, tools, skills, state, persistence, security policy, and observability without binding the framework to one model vendor or application.
 
-> **Status:** YANTRA-001 core contracts and the YANTRA-002 model gateway foundation are implemented. YANTRA-002 includes provider adapters, normalized completion/streaming, explicit routing policy, credential references, mocked HTTP protocol tests, a model catalog, and a limited developer smoke CLI. Provider behavior has not been live-verified, Windows CI has not run, and the agent execution loop, general-purpose CLI, persistence integration, and release remain unimplemented. This is not production-ready.
+> **Status:** YANTRA-001 core contracts and the YANTRA-002 model gateway foundation are implemented. The `0.2.0` release candidate has a 3-OS/3-Python CI matrix configured, but hosted runs are pending. Provider protocol tests are mocked; only narrow, user-reported OpenCode Go results exist and were not rerun for this candidate. The agent execution loop, general-purpose CLI, persistence integration, and production support remain unimplemented. See the [provider verification matrix](docs/features/provider-verification.md), [release notes](docs/releases/v0.2.0-release-notes.md), and [release audit](docs/releases/v0.2.0-release-audit.md).
 
 ## Why a harness?
 
@@ -86,7 +86,7 @@ Dependencies are defined in `pyproject.toml`; HTTPX supports the model gateway a
 
 ## Model and capability architecture
 
-Adapters normalize transport, authentication, streaming chunks, usage, and provider errors into versioned YANTRA contracts. The current gateway includes OpenAI, Anthropic, Gemini, DeepSeek, Ollama, OpenRouter, OpenCode Zen/Go, and configurable OpenAI Chat Completions-compatible endpoints. Capabilities are negotiated per model/deployment; unknown support stays unknown. Mocked HTTP tests do not establish live provider compatibility. See [model gateway](docs/architecture/model-gateway.md) and [provider contract](docs/specifications/model-provider-contract.md).
+Adapters normalize transport, authentication, streaming chunks, usage, and provider errors into versioned YANTRA contracts. The current gateway implements OpenAI, Anthropic, Gemini, DeepSeek, Ollama, OpenRouter, OpenCode Zen/Go, and a configurable OpenAI Chat Completions-compatible subset. Capabilities are negotiated per model/deployment; unknown support stays unknown. Mocked HTTP tests do not establish live provider compatibility. See the [provider verification matrix](docs/features/provider-verification.md), [model gateway](docs/architecture/model-gateway.md), and [provider contract](docs/specifications/model-provider-contract.md).
 
 ## Tools and skills
 

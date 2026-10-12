@@ -8,29 +8,61 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  verify:
+    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
-        python-version: ["3.12"]
-    runs-on: ${{ matrix.os }}
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.12", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
           enable-cache: true
-      - name: Set up Python
-        run: uv python install ${{ matrix.python-version }}
-      - name: Install project and development dependencies
-        run: uv sync --python ${{ matrix.python-version }} --locked --all-groups
-      - name: Lint
-        run: uv run ruff check .
-      - name: Check formatting
-        run: uv run ruff format --check .
-      - name: Type check
-        run: uv run pyright
+
+      - name: Install Python and locked dependencies
+        run: |
+          uv python install ${{ matrix.python-version }}
+          uv sync --python ${{ matrix.python-version }} --locked --all-groups
+          uv lock --check
+
+      - name: Lint, format, type check, and audit dependencies
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        run: |
+          uv run --locked ruff check .
+          uv run --locked ruff format --check .
+          uv run --locked pyright
+          uv audit --locked
+
       - name: Test
-        run: uv run pytest
-      - name: Build wheel
-        run: uv build --wheel
+        run: uv run --locked pytest -v
+
+      - name: Build wheel and source distribution
+        run: uv build
+
+      - name: Verify wheel CLI outside the checkout
+        working-directory: ${{ runner.temp }}
+        run: |
+          uv tool run --python ${{ matrix.python-version }} --from "${{ github.workspace }}/dist/yantra-0.2.0-py3-none-any.whl" yantra-smoke --help
+          uv tool run --python ${{ matrix.python-version }} --from "${{ github.workspace }}/dist/yantra-0.2.0-py3-none-any.whl" yantra-smoke offline
+          uv tool run --python ${{ matrix.python-version }} --from "${{ github.workspace }}/dist/yantra-0.2.0-py3-none-any.whl" yantra-smoke offline --stream
+          uv tool run --python ${{ matrix.python-version }} --from "${{ github.workspace }}/dist/yantra-0.2.0-py3-none-any.whl" yantra-smoke offline --tool-call
+          uv tool run --python ${{ matrix.python-version }} --from "${{ github.workspace }}/dist/yantra-0.2.0-py3-none-any.whl" yantra-smoke offline --stream --tool-call
+
+      - name: Verify sdist CLI outside the checkout
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        working-directory: ${{ runner.temp }}
+        run: |
+          uv tool run --python 3.12 --from "${{ github.workspace }}/dist/yantra-0.2.0.tar.gz" yantra-smoke --help
+          uv tool run --python 3.12 --from "${{ github.workspace }}/dist/yantra-0.2.0.tar.gz" yantra-smoke offline
+          uv tool run --python 3.12 --from "${{ github.workspace }}/dist/yantra-0.2.0.tar.gz" yantra-smoke offline --stream
+          uv tool run --python 3.12 --from "${{ github.workspace }}/dist/yantra-0.2.0.tar.gz" yantra-smoke offline --tool-call
+          uv tool run --python 3.12 --from "${{ github.workspace }}/dist/yantra-0.2.0.tar.gz" yantra-smoke offline --stream --tool-call

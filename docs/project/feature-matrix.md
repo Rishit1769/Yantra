@@ -1,6 +1,6 @@
 # Feature Matrix
 
-YANTRA-001 adds a Python package and local contract foundation. YANTRA-002 adds the model gateway foundation. Complete feature families remain incomplete; only the specific implemented portions are marked In Development. Verification is limited to recorded local checks; CI platforms are configured but not verified until GitHub Actions runs.
+YANTRA-001 adds a Python package and local contract foundation. YANTRA-002 adds the model gateway foundation. Complete feature families remain incomplete; only the specific implemented portions are marked In Development. The 3-operating-system/3-Python CI matrix is configured, but hosted execution is pending; configuration is not verification.
 
 | Capability | Status | Target phase | Key boundary |
 |---|---|---|---|

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "yantra"
-version = "0.1.0"
+dynamic = ["version"]
 description = "A model-agnostic AI agent runtime foundation"
 readme = "README.md"
 license = "Apache-2.0"
@@ -15,9 +15,11 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Typing :: Typed",
 ]
 dependencies = [
+  "httpcore>=1,<2",
   "httpx>=0.28,<1",
   "pydantic>=2.10,<3",
 ]
@@ -39,6 +41,9 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/yantra"]
+
+[tool.hatch.version]
+path = "src/yantra/_version.py"
 
 [tool.hatch.build.targets.sdist]
 include = ["src/yantra", "tests", "docs", "README.md", "pyproject.toml", "LICENSE"]

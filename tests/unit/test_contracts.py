@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from importlib.metadata import version
 from uuid import uuid4
 
 import pytest
@@ -129,4 +130,4 @@ def test_token_usage_requires_consistent_totals() -> None:
 
 
 def test_package_has_version_metadata() -> None:
-    assert __version__ == "0.1.0"
+    assert __version__ == version("yantra") == "0.2.0"

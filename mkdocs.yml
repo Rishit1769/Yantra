@@ -37,6 +37,7 @@ nav:
   - Features:
       - Runtime: features/agent-runtime.md
       - Providers: features/model-providers.md
+      - Provider verification: features/provider-verification.md
       - Tools: features/tool-execution.md
       - Skills: features/skill-registry.md
       - Workflows: features/workflows.md
@@ -50,7 +51,12 @@ nav:
       - NIRMAAN: integrations/nirmaan.md
       - MCP: integrations/mcp.md
   - Research: research/objectives.md
-  - Development: development/setup.md
+  - Development:
+      - Setup: development/setup.md
+      - Releasing: development/releasing.md
+  - Releases:
+      - v0.2.0 release notes: releases/v0.2.0-release-notes.md
+      - v0.2.0 audit: releases/v0.2.0-release-audit.md
   - Roadmap:
       - Milestones: roadmap/milestones.md
       - Acceptance criteria: roadmap/acceptance-criteria.md

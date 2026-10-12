@@ -1,6 +1,6 @@
 # Installation
 
-YANTRA-001/002 provide a source-installable Python package; no release has been published to a package index. Use Python 3.12+ and uv from the repository root:
+YANTRA-001/002 provide a source-installable Python package. The release-candidate version is `0.2.0`; no package-index release has been published. Use Python 3.12+ and uv from the repository root:
 
 ```sh
 uv sync --all-groups
