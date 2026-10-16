@@ -1,13 +1,13 @@
 # YANTRA Documentation
 
-This site documents implemented YANTRA-001 contracts, the YANTRA-002 model gateway foundation, and the engineering-accepted but experimental YANTRA-003 bounded runtime, alongside proposed architecture for later milestones. Feature documents identify implementation status; documentation alone is not proof. No feature is production-ready by virtue of being specified.
+This site documents implemented YANTRA-001 contracts, the YANTRA-002 model gateway foundation, the experimental YANTRA-003 bounded runtime, and YANTRA-004 secure tool runtime accepted for engineering completion but not released, alongside proposed architecture for later milestones. Feature documents identify implementation status; documentation alone is not proof. No feature is production-ready by virtue of being specified.
 
 ## Start here
 
 - [Project vision](project/vision.md), [goals](project/goals.md), [non-goals](project/non-goals.md), [terminology](project/terminology.md), [feature matrix](project/feature-matrix.md)
-- [Introduction](getting-started/introduction.md), [source installation](getting-started/installation.md), [core quickstart](getting-started/quickstart.md), [agent runtime quickstart](guides/agent-quickstart.md), [configuration](getting-started/configuration.md), [first agent](getting-started/first-agent.md)
+- [Introduction](getting-started/introduction.md), [source installation](getting-started/installation.md), [core quickstart](getting-started/quickstart.md), [agent runtime quickstart](guides/agent-quickstart.md), [secure tool runtime guide](security/secure-tool-runtime.md), [configuration](getting-started/configuration.md), [first agent](getting-started/first-agent.md)
 - [Architecture overview](architecture/overview.md), [system design](architecture/system-design.md), [runtime kernel](architecture/runtime-kernel.md), [agent execution engine](architecture/agent-execution-engine.md), [execution lifecycle](architecture/execution-lifecycle.md), [state machine](architecture/state-machine.md)
-- [Core API reference](specifications/core-runtime-api.md), [specifications](specifications/agent-contract.md), [compatibility policy](specifications/compatibility-policy.md)
+- [Core API reference](specifications/core-runtime-api.md), [YANTRA-004 engineering closure](development/yantra-004-engineering-closure.md), [specifications](specifications/agent-contract.md), [compatibility policy](specifications/compatibility-policy.md)
 - [Security threat model](security/threat-model.md), [development standards](development/coding-standards.md), [roadmap](../ROADMAP.md)
 
 ## Architecture
@@ -33,10 +33,10 @@ Feature specifications are organized in [features](features/). Major systems inc
 
 - [NIRMAAN boundary](integrations/nirmaan.md); provider integration pages are design notes, not claims of working integrations.
 - [Research objectives](research/objectives.md), [adaptive context](research/adaptive-context.md), [adaptive routing](research/adaptive-routing.md), [evidence-guided recovery](research/evidence-guided-recovery.md), [skill learning](research/skill-learning.md), [benchmarks](research/benchmarks.md), [reproducibility](research/reproducibility.md)
-- [Development setup](development/setup.md), [YANTRA-002 gateway smoke testing](development/smoke-testing.md), [testing strategy](development/testing-strategy.md), [documentation standards](development/documentation-standards.md), [release process](development/release-process.md)
-- [Core runtime API (YANTRA-001–YANTRA-004-V01)](specifications/core-runtime-api.md)
+- [Development setup](development/setup.md), [YANTRA-002 gateway smoke testing](development/smoke-testing.md), [secure tool platform validation](development/secure-tool-platform-validation.md), [testing strategy](development/testing-strategy.md), [documentation standards](development/documentation-standards.md), [release process](development/release-process.md)
+- [Core runtime API (YANTRA-001–YANTRA-004-V05)](specifications/core-runtime-api.md)
 - [Milestones](roadmap/milestones.md), [dependencies](roadmap/feature-dependencies.md), [acceptance criteria](roadmap/acceptance-criteria.md), [production readiness](roadmap/production-readiness.md)
 
 ## Status vocabulary
 
-Feature implementation status is one of Proposed, Specified, In Development, Implemented, Verified, or Deprecated. YANTRA-001 contracts and the YANTRA-002 gateway foundation are implemented with local mocked tests; YANTRA-003 adds a bounded offline agent runtime, explicit deny-by-default per-run tool-name authorization, usage controls, and sanitized diagnostics. YANTRA-004-V01 adds exact-match logical scope authorization, while broader policy, approval, sandbox, and durable agent systems remain out of scope. Live provider behavior and GitHub Actions on macOS/Windows have not been verified.
+Feature implementation status is one of Proposed, Specified, In Development, Implemented, Verified, or Deprecated. YANTRA-001 contracts and the YANTRA-002 gateway foundation are implemented with local mocked tests; YANTRA-003 adds a bounded offline agent runtime; YANTRA-004-V01–V05 add and verify exact-match logical authorization, trusted approvals, engine-issued dispatch authorization, and a restricted subprocess boundary. Engineering acceptance is not a release or production claim. Windows, Python 3.13/3.14, hosted CI, and a fresh YANTRA-004 package build remain unverified; subprocess execution is not OS sandboxing.

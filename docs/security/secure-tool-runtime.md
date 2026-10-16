@@ -1,4 +1,4 @@
-# Secure Tool Runtime and Restricted Execution (YANTRA-004-V04)
+# Secure Tool Runtime and Restricted Execution (YANTRA-004-V05)
 
 YANTRA-004 adds an in-process authorization layer to the bounded YANTRA-003
 agent loop. Logical capability scopes and an explicit tool-name allowlist are
@@ -140,6 +140,24 @@ The implementation deliberately does not create process groups or Windows Job
 Objects. Without actual Windows validation it cannot claim consistent
 descendant cleanup across both target platforms. It uses no broad PID
 enumeration. Protocol/lifecycle limits are not CPU, memory, or disk quotas.
+
+## V05 final acceptance
+
+V05 rechecked the model-to-handler authorization path and verified that signed
+dispatch authority is rejected when arguments, run identity, or registered
+definition are substituted. Existing offline tests cover public ALLOW claims,
+caller-minted/replayed tokens, scope/approval denial, cross-run or digest
+mismatch, registry mutation, late approval after cancellation, and subprocess
+cleanup. The test matrix does not move the Python host process into the threat
+boundary: same-process private-member access and monkeypatching remain trusted
+host capabilities, not supported attacker APIs. See the [formal engineering
+closure](../development/yantra-004-engineering-closure.md) for the final
+security finding register, full validation evidence, and release blockers.
+
+Legacy unscoped tools continue to default to
+`allow_legacy_unscoped_tools=True` for compatibility. They still require the
+independent tool-name allowlist. A future default change should follow an
+explicit migration/deprecation decision; V05 does not silently change it.
 
 ## Security guarantees matrix
 

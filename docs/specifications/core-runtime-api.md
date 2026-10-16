@@ -1,6 +1,6 @@
-# Core Runtime API (YANTRA-001–YANTRA-004-V01)
+# Core Runtime API (YANTRA-001–YANTRA-004-V05)
 
-**Status:** YANTRA-001 contracts and the YANTRA-002 model gateway have local test coverage on macOS. This page also documents the experimental YANTRA-003 bounded execution API, engineering-accepted on its feature branch but not included in the unreleased `0.2.0` package. YANTRA-003 authorizes tools through an explicit per-run name allowlist (empty means deny all); YANTRA-004-V01 adds a focused exact-match scope policy for declared requirements on its feature branch. That addition is not included in `0.2.0`, is not a general policy language or sandbox, and does not imply release approval. Usage and cost limits are best-effort accounting, not a hard spending ceiling. The configured 3-OS/3-Python GitHub Actions matrix has not run on hosted CI. Live provider evidence is limited to user-reported OpenCode Go results for one model and was not rerun for v0.2.0. Durable persistence and a runtime scheduler are not provided.
+**Status:** YANTRA-001 contracts and the YANTRA-002 model gateway have local test coverage on macOS. YANTRA-003 is experimental and unreleased. YANTRA-004-V01–V05 are accepted for engineering completion on the secure-tools feature branch, but are not included in the unreleased `0.2.0` package. The V05 offline suite, Ruff, Pyright, lock consistency, and examples passed locally on macOS/Python 3.12.15. Windows, Python 3.13/3.14, hosted CI, and a fresh package build remain unverified. YANTRA-004 provides focused logical scopes, trusted approvals, and restricted subprocess execution—not a general policy language or OS sandbox. Usage/cost limits are not hard spending ceilings. See the [YANTRA-004 engineering closure](../development/yantra-004-engineering-closure.md); this is not release approval.
 
 ## Package and installation
 
@@ -70,7 +70,7 @@ registry.register(tool)
 schema = registry.export_provider_schemas()[0]
 ```
 
-`ToolDefinition.permission_scopes` declares required logical scopes evaluated by the YANTRA-004-V01 tool policy layer. Scoped tools require explicit per-run scope grants in addition to the independent `tool_names` allowlist. Existing unscoped tools retain the explicit `allow_legacy_unscoped_tools` compatibility mode, which does not bypass the name allowlist. Registration and schema export never grant permission. These checks are in-process logical authorization, not a sandbox or OS-level filesystem/network enforcement. See [secure tool runtime](../security/secure-tool-runtime.md).
+`ToolDefinition.permission_scopes` declares required logical scopes evaluated by the YANTRA-004 tool policy layer. Scoped tools require explicit per-run scope grants in addition to the independent `tool_names` allowlist. Existing unscoped tools retain the `allow_legacy_unscoped_tools=True` compatibility default; this does not bypass the name allowlist, and V05 does not change that default. Registration and schema export never grant permission. These checks are in-process logical authorization, not a sandbox or OS-level filesystem/network enforcement. See [secure tool runtime](../security/secure-tool-runtime.md).
 
 ## States and events
 
@@ -88,7 +88,7 @@ Public exceptions derive from `YantraError` and include configuration, provider 
 
 `get_logger(name, level=..., **context)` returns a standard-library structured logging facade under `yantra.<name>`. Named fields are attached as `LogRecord` extras. Sensitive field names and common secret patterns are redacted. `exception()` intentionally omits raw tracebacks because exception text may contain secrets. Importing the package does not configure handlers or root logging. This helper is not a substitute for comprehensive secret-aware telemetry review.
 
-## YANTRA-003/004-V01 agent execution and tool policy
+## YANTRA-003/004-V05 agent execution and secure tool runtime
 
 `yantra.runtime.AgentExecutionEngine` accepts an existing `ModelGateway` and
 `ToolRegistry`, then runs a bounded asynchronous model/tool loop. It preserves
@@ -114,10 +114,16 @@ pricing and token bounds are available, but there is no guaranteed per-run
 billing ceiling. An admitted request may exceed the configured budget before
 usage is observed. Missing required accounting fails closed before further
 work, but only after the response reveals the missing data. Gateway and tool
-timeouts preserve completed progress. Sync tool
-work uses a worker thread and cannot be forcibly stopped by asyncio
-cancellation. The engine does not add shell, filesystem, browser, MCP,
-persistence, or authorization-policy capabilities. See [agent execution engine](../architecture/agent-execution-engine.md).
+timeouts preserve completed progress. Sync in-process tool work uses a worker
+thread and cannot be forcibly stopped by asyncio cancellation. The engine does
+not add shell, filesystem, browser, MCP, persistence, or a general-purpose
+authorization policy language. A standalone public `ToolExecutor` fails closed;
+the engine alone issues and verifies exact-call, single-use dispatch authority.
+For eligible subprocess tools, handler IDs are statically registered and the
+worker protocol is bounded JSON. This is restricted execution, not an OS
+sandbox; cleanup covers the direct child, not descendants. See [agent execution
+engine](../architecture/agent-execution-engine.md) and the [secure tool
+runtime](../security/secure-tool-runtime.md).
 `yantra.runtime.format_run_result(result)` formats the summary and sanitized
 trace for display without including conversation bodies, raw model-supplied
 tool names or call IDs, tool arguments, result payloads, exception text, or
@@ -129,9 +135,11 @@ quickstart](../guides/agent-quickstart.md).
 
 ## Limitations
 
-YANTRA-003 provides a local bounded loop and controlled registry executor, but
-there is no durable persistence, general-purpose authorization policy engine, skill system,
-general-purpose CLI, Redis, pgvector, distributed coordination, or production
-support. Hosted CI execution, Windows compatibility, and production deployment
-controls are not verified. YANTRA is pre-1.0; `0.2.0` does not promise a stable
-API. See the [release audit](../releases/v0.2.0-release-audit.md).
+YANTRA-003 provides a local bounded loop and YANTRA-004 adds logical tool
+authorization, process-local approvals, and restricted child-process execution.
+There is no durable persistence, general-purpose policy language, skill
+system, general-purpose CLI, Redis, pgvector, distributed coordination, or
+production support. Windows, additional Python versions, hosted CI, and a fresh
+package build remain unverified. YANTRA is pre-1.0; `0.2.0` does not promise a
+stable API. See the [engineering closure](../development/yantra-004-engineering-closure.md)
+and [release audit](../releases/v0.2.0-release-audit.md).

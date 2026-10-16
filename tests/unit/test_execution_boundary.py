@@ -387,6 +387,54 @@ async def test_public_decision_and_forged_or_replayed_signed_authority_fail() ->
 
 
 @pytest.mark.asyncio
+async def test_dispatch_authority_rejects_changed_arguments_run_and_definition() -> None:
+    definition = worker_tool()
+    registry = ToolRegistry()
+    registry.register(definition)
+    authority = ExecutionAuthorizationAuthority()
+    executor = _EngineToolExecutor(registry, authority._verifier_key())
+    call = ToolCall(
+        call_id="bound-call", name=definition.name, arguments={"left": "a", "right": "b"}
+    )
+    decision = PolicyDecision(effect=PolicyEffect.ALLOW, reason=PolicyReason.ALLOWED)
+    run_id = uuid4()
+    token = authority.issue(
+        run_id=run_id,
+        call_id=call.call_id,
+        definition=definition,
+        arguments_sha256=canonical_json_digest(call.arguments),
+        decision=decision,
+        approval_granted=False,
+    )
+
+    changed_arguments = call.model_copy(update={"arguments": {"left": "x", "right": "b"}})
+    changed_run = uuid4()
+    for altered_call, altered_run in ((changed_arguments, run_id), (call, changed_run)):
+        result = await executor.execute(
+            altered_call,
+            authorization=decision,
+            execution_authorization=token,
+            run_id=altered_run,
+            expected_definition=definition,
+        )
+        assert result.is_error
+        assert result.result["error_code"] == "tool_not_permitted"
+
+    substituted_definition = worker_tool()
+    registry.unregister(definition.name)
+    registry.register(substituted_definition)
+    result = await executor.execute(
+        call,
+        authorization=decision,
+        execution_authorization=token,
+        run_id=run_id,
+        expected_definition=substituted_definition,
+    )
+    assert result.is_error
+    assert result.result["error_code"] == "tool_not_permitted"
+
+
+@pytest.mark.asyncio
 async def test_worker_startup_protocol_crash_and_tool_failures_are_safe(tmp_path: Path) -> None:
     boundary = SubprocessExecutionBoundary()
 
