@@ -1,6 +1,6 @@
-# Core Runtime API (YANTRA-001)
+# Core Runtime API (YANTRA-001–YANTRA-003)
 
-**Status:** The YANTRA-001 contract foundation and YANTRA-002 model gateway have local test coverage on macOS. The 3-OS/3-Python GitHub Actions matrix is configured, but hosted execution is pending. Live provider evidence is limited to user-reported OpenCode Go results for one model and was not rerun for v0.2.0. This page does not document a full agent loop, runtime scheduler, tool authorization system, or durable persistence adapter.
+**Status:** YANTRA-001 contracts and the YANTRA-002 model gateway have local test coverage on macOS. This page also documents the experimental YANTRA-003 bounded execution API, engineering-accepted on its feature branch but not included in the unreleased `0.2.0` package. YANTRA-003 authorizes tools through an explicit per-run name allowlist (empty means deny all); registry membership alone does not grant permission. `permission_scopes` are descriptive, and there is no general scope/policy engine. Usage and cost limits are best-effort accounting, not a hard spending ceiling. The configured 3-OS/3-Python GitHub Actions matrix has not run on hosted CI. Live provider evidence is limited to user-reported OpenCode Go results for one model and was not rerun for v0.2.0. Durable persistence and a runtime scheduler are not provided.
 
 ## Package and installation
 

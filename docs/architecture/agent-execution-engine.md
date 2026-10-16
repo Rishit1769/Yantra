@@ -1,9 +1,12 @@
-# Agent Execution Engine (YANTRA-003-V02)
+# Agent Execution Engine (YANTRA-003)
 
-**Status: Implemented and locally verified on the feature branch.** V02 hardens
-the V01 runtime loop and its failure, cancellation, budget, and trace behavior.
-This is an experimental post-`0.2.0` runtime milestone; it is not part of the
-`0.2.0` release candidate.
+**Status: Engineering-accepted on the feature branch; experimental and unreleased.**
+The YANTRA-003 runtime has local verification evidence, but is not included in
+the unreleased `0.2.0` package. Its available tool authorization is an explicit
+per-run name allowlist; `permission_scopes` remain descriptive, and no general
+scope/policy engine is implemented. Usage and cost accounting are best-effort,
+not a hard spending ceiling. See the YANTRA-003 engineering closure in
+[`milestones.md`](../roadmap/milestones.md).
 
 `yantra.runtime.AgentExecutionEngine` composes the existing `ModelGateway` with
 the existing provider-neutral messages and `ToolRegistry`. Each model response

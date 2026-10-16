@@ -5,7 +5,7 @@ All dates are intentionally omitted; sequence depends on maintainers, funding, a
 ## Phase 1 — Foundation
 - Dependencies: repository governance and license decision; API review.
 - Deliverables: package structure, typed contracts, model gateway with one conformance-tested adapter, agent runtime/state machine, tool registry/policy, basic tracing, CLI, unit/property tests.
-- Current progress: YANTRA-001 implements packaging, contracts, mock provider, tool registry, state transitions, events, in-memory storage, logging, tests, and CI configuration. YANTRA-002 adds the model gateway and provider adapters with mocked HTTP coverage; YANTRA-002-V01 adds a limited developer smoke CLI. Live provider compatibility, the full agent loop, tool authorization policy, tracing backend, general-purpose CLI, and cross-platform CI execution remain unverified or unimplemented.
+- Current progress: YANTRA-001 implements packaging, contracts, mock provider, tool registry, state transitions, events, in-memory storage, logging, tests, and CI configuration. YANTRA-002 adds the model gateway and provider adapters with mocked HTTP coverage; YANTRA-002-V01 adds a limited developer smoke CLI. YANTRA-003 provides an experimental bounded local agent loop and a deny-by-default per-run tool-name allowlist; a general scope/policy engine, live provider compatibility, tracing backend, general-purpose CLI, and hosted cross-platform CI execution remain unverified or unimplemented.
 - Acceptance: clean artifact build/install; Python 3.12 support; legal/illegal state tests; denied tools never execute; provider capability mismatch fails clearly; secret canary absent from telemetry; runnable documented quickstart verified.
 - Release gate: API/status review and dependency/security scan. Alpha only; no production claim.
 
@@ -35,3 +35,13 @@ All dates are intentionally omitted; sequence depends on maintainers, funding, a
 
 ## Research extensions
 Adaptive context, adaptive routing, evidence-guided recovery, and skill learning proceed as isolated experiments with baselines, ablations, reproducibility manifests, privacy reviews, and no default behavior change until evidence and safety review support adoption.
+
+## YANTRA-003 Engineering Closure
+
+**Decision: ACCEPTED for engineering completion; not released.** The bounded execution engine composes the existing model gateway and tool registry, supports per-run name allowlists with deny-by-default behavior, bounded run controls, normalized failure/cancellation handling, and sanitized diagnostics. Tool registration alone does not authorize execution. Declared permission scopes are descriptive; no general authorization-policy engine is implemented. Usage/cost checks are best-effort accounting and do not guarantee a strict spending ceiling.
+
+**Acceptance evidence:** The independent R05 audit recorded 184 passing tests, passing Ruff and Pyright checks, and a successful repeatable offline agent demonstration; it also verified the configured CI matrix but did not have hosted job results. R05 reported the security and cost-accounting findings addressed by R01/R04 as remediated. This R06 change corrects the contradictory API status statement and reconciles milestone documentation; it does not represent a fresh full-suite, build, or hosted-CI run.
+
+**Residual limitations:** No general scope/policy engine or isolated execution sandbox; synchronous tool work may outlive cancellation; no durable run recovery or exactly-once external effects; token/cost accounting is not a hard ceiling. A fresh `0.3.0` package build and hosted macOS/Windows CI results remain unverified.
+
+**Release disposition:** Package version remains `0.2.0`; YANTRA-003 is experimental, is not included in that package, and has no public release approval. Release readiness remains **NOT READY / NO-GO** pending fresh release-artifact verification, hosted CI evidence, and a separate maintainer release decision. Engineering acceptance does not authorize publishing, tagging, merging, or deployment.

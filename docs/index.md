@@ -1,6 +1,6 @@
 # YANTRA Documentation
 
-This site combines implemented YANTRA-001 contracts and the YANTRA-002 model gateway foundation with proposed architecture for later milestones. Feature documents identify implementation status; documentation alone is not proof. No feature is production-ready by virtue of being specified.
+This site documents implemented YANTRA-001 contracts, the YANTRA-002 model gateway foundation, and the engineering-accepted but experimental YANTRA-003 bounded runtime, alongside proposed architecture for later milestones. Feature documents identify implementation status; documentation alone is not proof. No feature is production-ready by virtue of being specified.
 
 ## Start here
 
@@ -34,7 +34,7 @@ Feature specifications are organized in [features](features/). Major systems inc
 - [NIRMAAN boundary](integrations/nirmaan.md); provider integration pages are design notes, not claims of working integrations.
 - [Research objectives](research/objectives.md), [adaptive context](research/adaptive-context.md), [adaptive routing](research/adaptive-routing.md), [evidence-guided recovery](research/evidence-guided-recovery.md), [skill learning](research/skill-learning.md), [benchmarks](research/benchmarks.md), [reproducibility](research/reproducibility.md)
 - [Development setup](development/setup.md), [YANTRA-002 gateway smoke testing](development/smoke-testing.md), [testing strategy](development/testing-strategy.md), [documentation standards](development/documentation-standards.md), [release process](development/release-process.md)
-- [YANTRA-001 core API and YANTRA-002 model gateway API](specifications/core-runtime-api.md)
+- [Core runtime API (YANTRA-001–YANTRA-003)](specifications/core-runtime-api.md)
 - [Milestones](roadmap/milestones.md), [dependencies](roadmap/feature-dependencies.md), [acceptance criteria](roadmap/acceptance-criteria.md), [production readiness](roadmap/production-readiness.md)
 
 ## Status vocabulary
