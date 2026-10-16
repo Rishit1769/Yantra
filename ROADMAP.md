@@ -17,3 +17,7 @@ Research extensions (adaptive context/routing, evidence-guided recovery, skill l
 ## YANTRA-RR-001 Release Readiness
 
 **Engineering verification: PASS. Public release: NO-GO.** Local macOS/Python 3.12 checks passed (229 tests, quality checks, examples, and security regression files). Static inspection found the existing ignored `0.2.0` wheel and sdist do not match the current checkout; Hatchling/build frontend are unavailable, preventing a fresh build and clean install. Python 3.13/3.14 environments lack project dependencies, Windows is unavailable, and hosted CI remains blocked. See the [RR-001 release-readiness evidence](docs/development/yantra-release-readiness-rr001.md) for exact statuses and corrective actions.
+
+## YANTRA-RR-002 Packaging and Python Compatibility
+
+**Engineering verification: PASS. Public release: NO-GO.** Fresh `0.2.0` wheel and sdist builds match current source; separate builds were byte-identical, and a wheel rebuilt from the sdist matched the direct wheel. Clean wheel installs passed on Python 3.12/3.13/3.14, clean sdist install passed on Python 3.12, and all 229 tests plus four offline examples passed on each interpreter. Windows runtime, hosted CI, and maintainer release approval remain outstanding. See the [RR-002 release-readiness evidence](docs/development/yantra-release-readiness-rr002.md) for artifact hashes and exact validation scope.
