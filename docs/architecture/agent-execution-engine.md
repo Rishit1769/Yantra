@@ -75,9 +75,9 @@ limits, unique optional tool allowlist, and optional token/cost budgets.
 assistant message, ordered steps/tool results, known usage/cost, and sanitized
 trace metadata. The public `format_run_result(result)` helper renders a
 payload-minimal human-readable summary and trace without dumping messages,
-tool arguments, or reasoning. Runs keep their message history, counters, and trace local, so
-one engine can serve concurrent independent runs when its registry is not
-mutated during execution.
+tool arguments, tool payloads, exception text, or reasoning. Runs keep their
+message history, counters, and trace local, so one engine can serve concurrent
+independent runs when its registry is not mutated during execution.
 
 ## Safety and failures
 
@@ -95,10 +95,19 @@ ID before the next model request. The OpenAI-compatible message conversion is
 covered by offline protocol tests. Call IDs must be unique across a run;
 duplicate IDs fail before any call in that response is executed. Repeating a
 tool name is permitted with a fresh call ID. A configured `tool_names` list
-limits both advertised and executable tools; the default empty tuple keeps all
-registry tools enabled. A proposal outside a non-empty allowlist becomes a
-structured `tool_not_permitted` observation. A batch that exceeds the remaining
+limits both advertised and executable tools; an empty tuple authorizes no
+tools. Registration does not authorize execution, and execution independently
+checks each model proposal even when its schema was not advertised. Unregistered
+names in the allowlist do not grant access and are simply ineffective (only
+registered names are advertised). A proposal outside the allowlist becomes a
+structured `tool_not_permitted` observation. `permission_scopes` remains
+descriptive metadata: this milestone has no scope evaluator, and the field
+itself provides no execution enforcement. A batch that exceeds the remaining
 tool-call budget is rejected in full, without partial execution.
+
+Compatibility note: the default empty allowlist previously exposed all
+registered tools. It now exposes and authorizes none; callers must name each
+tool they intend a run to use.
 
 `max_steps` counts model requests: a final text response on the last allowed
 step completes normally, but a tool proposal on that step is not executed and
@@ -117,13 +126,32 @@ sync handlers run in a worker thread and Python cannot forcibly stop that
 thread, so timeout/cancellation stops waiting but may not stop its underlying
 work. Step and tool limits also bound progress.
 
-Provider-reported usage is summed without synthesizing missing values. If any
-model response omits usage, `usage_complete` is false and the result does not
-claim a complete aggregate. When a token budget is configured, missing usage
-fails closed before further actions. Monetary limits use gateway-reported cost
-or its estimate; if cost is unknown while a cost budget is configured, the run
-fails closed rather than claiming enforcement. Without a configured cost
-budget, unknown cost remains unknown.
+Budget semantics have separate boundaries. Before a model request, the engine
+stops if known cumulative token usage has exhausted the token budget and passes
+the remaining token budget as `GenerationSettings.max_output_tokens`. Adapters
+map this to their provider-specific output limit where supported. This is an
+output cap, not a cap on total input-plus-output usage: input size is not
+tokenized by the runtime, provider behavior can differ, and one response can
+still exceed the configured total. Actual usage is accounted only after the
+response. Missing usage with a configured token budget fails closed before any
+subsequent tool or model work, without inventing values.
+
+Cost budgets are also post-response accounting guards. Gateway routing policy
+may independently preflight a request when its configured pricing and token
+bounds are available; the agent runtime does not create a second pricing
+engine, estimate prompt tokens, or guarantee a per-run monetary ceiling. A
+known response cost at or above the configured budget prevents further work;
+unknown cost with a configured cost budget fails closed after that response.
+Consequently, a single admitted request may incur more than the per-run budget
+before the runtime can observe and stop it. `cost_budget_enforced` indicates
+that known cost was checked to stop further execution, not that billing was
+strictly capped. Without a configured cost budget, unknown cost remains
+unknown.
+
+Diagnostics show only recognized structured tool error categories (`tool_not_permitted`,
+`tool_not_found`, `invalid_arguments`, `tool_timeout`, `invalid_output`, and
+`tool_exception`). Missing or unrecognized categories are omitted; raw result
+payloads and exception messages are never formatted.
 
 Trace entries contain state/event metadata, step number, tool name/call ID,
 outcome, and known usage. They intentionally exclude tool arguments, full

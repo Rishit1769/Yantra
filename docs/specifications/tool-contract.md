@@ -10,4 +10,14 @@ async def lookup(args: LookupInput, context: ToolContext) -> LookupOutput:
     ...
 ```
 
-This is pseudocode, not an existing decorator. Runtime validates schema, principal, policy, approval requirement, limits, and exact version before dispatch. Model arguments never carry permission grants. Sync functions must execute in a bounded worker to avoid blocking the event loop. Outputs are validated, truncated/rejected by policy, and classified. Errors use stable categories and safe public messages; detailed diagnostics stay in protected telemetry. Idempotency is an adapter contract and cannot make arbitrary external effects exactly-once.
+This is pseudocode, not an existing decorator. YANTRA-003 currently implements
+typed registration/execution and an explicit per-run name allowlist, not the
+principal/policy/approval dispatcher described above. An empty allowlist
+authorizes no tools; registration does not grant permission, and execution
+rechecks authorization independently from schema advertisement.
+`ToolDefinition.permission_scopes` is descriptive metadata only and is not
+enforced. Runtime validates schemas and arguments, executes sync functions in
+a worker thread, and validates declared outputs; it does not implement
+policy-based output truncation. Tool errors are structured observations, and
+developer diagnostics expose only recognized safe error categories. Idempotency
+is an adapter contract and cannot make arbitrary external effects exactly-once.

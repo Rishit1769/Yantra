@@ -39,4 +39,4 @@ Feature specifications are organized in [features](features/). Major systems inc
 
 ## Status vocabulary
 
-Feature implementation status is one of Proposed, Specified, In Development, Implemented, Verified, or Deprecated. YANTRA-001 contracts and the YANTRA-002 gateway foundation are implemented with local mocked tests; YANTRA-003-V03 adds a runnable offline agent example and human-readable diagnostics over the locally verified V02 bounded loop. Durable agent systems remain unimplemented. Live provider behavior and GitHub Actions on macOS/Windows have not been verified.
+Feature implementation status is one of Proposed, Specified, In Development, Implemented, Verified, or Deprecated. YANTRA-001 contracts and the YANTRA-002 gateway foundation are implemented with local mocked tests; YANTRA-003 adds a bounded offline agent runtime, explicit deny-by-default per-run tool-name authorization, usage controls, and sanitized diagnostics. It does not provide a general scope/policy authorization engine or durable agent systems. Live provider behavior and GitHub Actions on macOS/Windows have not been verified.

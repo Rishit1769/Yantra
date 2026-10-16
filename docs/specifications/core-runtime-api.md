@@ -99,16 +99,28 @@ steps, tool observations, known usage/cost, and sanitized trace entries.
 `CancellationToken` provides explicit cooperative cancellation. External task
 cancellation propagates as normal `asyncio.CancelledError`. Tool failures are
 structured observations; duplicate call IDs and malformed empty responses fail
-the run. Tool proposals are processed sequentially, non-empty tool allowlists
-are enforced at execution, and over-budget batches are rejected atomically.
-Configured token/cost budgets fail closed if the required usage/cost data is
-unavailable. Gateway and tool timeouts preserve completed progress. Sync tool
+the run. Tool proposals are processed sequentially, allowlists are enforced
+when advertising schemas and independently at execution, and an empty allowlist
+denies all tools. Unknown allowlist names do not grant access. Over-budget
+batches are rejected atomically. `permission_scopes` is descriptive metadata;
+no scope policy engine enforces it. Token budgets pass the remaining budget as
+the provider output-token limit where supported, then use actual post-response
+usage to stop subsequent work. This does not cap total tokens: prompt tokens
+are not estimated and provider behavior can vary. Cost budgets use
+post-response accounting; gateway routing policy may separately preflight when
+pricing and token bounds are available, but there is no guaranteed per-run
+billing ceiling. An admitted request may exceed the configured budget before
+usage is observed. Missing required accounting fails closed before further
+work, but only after the response reveals the missing data. Gateway and tool
+timeouts preserve completed progress. Sync tool
 work uses a worker thread and cannot be forcibly stopped by asyncio
 cancellation. The engine does not add shell, filesystem, browser, MCP,
 persistence, or authorization-policy capabilities. See [agent execution engine](../architecture/agent-execution-engine.md).
 `yantra.runtime.format_run_result(result)` formats the summary and sanitized
-trace for display without including conversation bodies, tool arguments, or
-provider reasoning. The complete deterministic example is in the [agent runtime
+trace for display without including conversation bodies, tool arguments,
+result payloads, exception text, or provider reasoning. Recognized structured
+tool error categories are shown; malformed or unrecognized categories are
+omitted. The complete deterministic example is in the [agent runtime
 quickstart](../guides/agent-quickstart.md).
 
 ## Limitations

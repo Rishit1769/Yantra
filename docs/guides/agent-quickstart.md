@@ -34,8 +34,12 @@ the formatter.
 
 Tools are registered explicitly. Each definition declares its input model,
 optional output model, sync/async execution mode, and side-effect category.
-`AgentRunConfig.tool_names` can further restrict which registered tools are
-advertised and executable during that run.
+`AgentRunConfig.tool_names` explicitly authorizes the registered tools that
+may be advertised and executed during that run. The default empty tuple
+authorizes none; registration alone is not permission. Execution checks the
+allowlist again even if a model proposes a tool that was not advertised.
+Unknown names are ineffective and do not widen access. `permission_scopes` is
+metadata only and is not evaluated by this runtime.
 
 ```python
 from pydantic import BaseModel
@@ -72,13 +76,24 @@ step/tool/time limits, optional token/cost budgets, and the tool allowlist.
 Always inject the gateway and registry explicitly; the runtime does not load
 credentials or create global registries on its own.
 
+Token budgets set a per-request output-token limit to the remaining known
+budget when supported, then compare actual reported usage after each response.
+This is not a hard total-token ceiling because input tokens are not estimated
+and provider limits are provider-side behavior. Cost budgets are likewise
+post-response checks; gateway routing policy can independently preflight only
+when pricing and token bounds are available. A request may exceed a per-run
+cost budget before its cost is observed, so this is not a guaranteed billing
+cap. Missing required usage or cost stops subsequent execution without
+fabricating accounting values.
+
 ## Inspect a result and cancel a run
 
 Await `engine.run(config)` to receive the immutable result. Check
 `termination_reason` and `error_code` instead of treating every non-exceptional
 return as success. `format_run_result(result)` provides a concise summary and
-trace for developer display; inspect the typed `steps`, `tool_results`, `usage`,
-and `trace` fields when application logic needs structured data.
+trace for developer display, including recognized safe tool error categories;
+it omits payloads and exception text. Inspect typed `steps`, `tool_results`,
+`usage`, and `trace` fields when application logic needs structured data.
 
 For explicit cooperative cancellation, pass a `CancellationToken` and call
 `cancel()` from the owning task:
