@@ -10,6 +10,16 @@ from yantra.tools.approvals import (
     InMemoryApprovalStore,
 )
 from yantra.tools.base import ExecutionMode, SideEffect, ToolDefinition
+from yantra.tools.execution import (
+    ExecutionBoundary,
+    ExecutionLimits,
+    ExecutionRequest,
+    ExecutionResponse,
+    ExecutionResult,
+    ExecutionResultStatus,
+    InProcessExecutionBoundary,
+    ToolExecutionBoundaryMode,
+)
 from yantra.tools.executor import ToolExecutor
 from yantra.tools.policy import (
     DefaultPolicyEvaluator,
@@ -23,9 +33,17 @@ from yantra.tools.policy import (
     ToolRiskLevel,
 )
 from yantra.tools.registry import ToolRegistry
+from yantra.tools.subprocess_boundary import SubprocessExecutionBoundary
 
 __all__ = [
     "DefaultPolicyEvaluator",
+    "ExecutionBoundary",
+    "ExecutionLimits",
+    "ExecutionRequest",
+    "ExecutionResponse",
+    "ExecutionResult",
+    "ExecutionResultStatus",
+    "InProcessExecutionBoundary",
     "ApprovalDecision",
     "ApprovalProvider",
     "ApprovalRequest",
@@ -43,7 +61,9 @@ __all__ = [
     "PolicyRequest",
     "SideEffect",
     "ToolDefinition",
+    "ToolExecutionBoundaryMode",
     "ToolExecutor",
     "ToolRegistry",
     "ToolRiskLevel",
+    "SubprocessExecutionBoundary",
 ]

@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import json
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -34,6 +32,11 @@ from yantra.tools.approvals import (
     InMemoryApprovalStore,
 )
 from yantra.tools.base import ToolDefinition
+from yantra.tools.execution import (
+    ExecutionAuthorizationAuthority,
+    ExecutionLimits,
+    canonical_json_digest,
+)
 from yantra.tools.executor import ToolExecutor
 from yantra.tools.policy import (
     DefaultPolicyEvaluator,
@@ -45,6 +48,7 @@ from yantra.tools.policy import (
     PolicyRequest,
 )
 from yantra.tools.registry import ToolRegistry
+from yantra.tools.subprocess_boundary import SubprocessExecutionBoundary
 
 _T = TypeVar("_T")
 
@@ -71,14 +75,7 @@ class _CancellationRequested(Exception):
 
 
 def _canonical_digest(value: object) -> str:
-    encoded = json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    )
-    return hashlib.sha256(encoded.encode("utf-8", errors="strict")).hexdigest()
+    return canonical_json_digest(value)
 
 
 def _authorization_digest(
@@ -121,9 +118,31 @@ class AgentExecutionEngine:
         approval_provider: ApprovalProvider | None = None,
         approval_store: ApprovalStore | None = None,
         approval_ttl_seconds: float = 60.0,
+        subprocess_boundary: SubprocessExecutionBoundary | None = None,
+        execution_limits: ExecutionLimits | None = None,
     ) -> None:
         self.gateway = gateway
-        self.tool_executor = tools if isinstance(tools, ToolExecutor) else ToolExecutor(tools)
+        self.__execution_authority = ExecutionAuthorizationAuthority()
+        if isinstance(tools, ToolExecutor):
+            self.tool_executor = tools
+            if subprocess_boundary is not None:
+                self.tool_executor.subprocess_boundary = subprocess_boundary
+            elif execution_limits is not None:
+                self.tool_executor.subprocess_boundary = SubprocessExecutionBoundary(
+                    execution_limits
+                )
+            self.tool_executor._bind_authorization_key(  # pyright: ignore[reportPrivateUsage]
+                self.__execution_authority._verifier_key()  # pyright: ignore[reportPrivateUsage]
+            )
+        else:
+            self.tool_executor = ToolExecutor(
+                tools,
+                subprocess_boundary=subprocess_boundary,
+                execution_limits=execution_limits,
+            )
+            self.tool_executor._bind_authorization_key(  # pyright: ignore[reportPrivateUsage]
+                self.__execution_authority._verifier_key()  # pyright: ignore[reportPrivateUsage]
+            )
         self.policy_evaluator = policy_evaluator or DefaultPolicyEvaluator()
         self.approval_provider = approval_provider
         self.approval_store = approval_store or InMemoryApprovalStore()
@@ -469,6 +488,13 @@ class AgentExecutionEngine:
                                     current_call,
                                     authorization=current_decision,
                                 )
+                            if current_decision.effect == PolicyEffect.DENY:
+                                return self.tool_executor.policy_failure(
+                                    current_call,
+                                    "tool_not_permitted",
+                                    "tool is not authorized for this run",
+                                    current_decision,
+                                )
                             approved = False
                             if current_decision.effect == PolicyEffect.APPROVAL_REQUIRED:
                                 approval_provider = self.approval_provider
@@ -610,8 +636,21 @@ class AgentExecutionEngine:
                                         "tool_not_permitted",
                                         "tool authorization changed before dispatch",
                                     )
-                            capability = self.tool_executor._issue_capability(  # pyright: ignore[reportPrivateUsage]
-                                current_call, current_definition, approved=approved
+                            try:
+                                arguments_digest = _canonical_digest(current_call.arguments)
+                            except (TypeError, ValueError):
+                                return self.tool_executor.failure(
+                                    current_call,
+                                    "tool_invalid_serialization",
+                                    "tool arguments cannot be serialized safely",
+                                )
+                            execution_authorization = self.__execution_authority.issue(
+                                run_id=config.run_id,
+                                call_id=current_call.call_id,
+                                definition=current_definition,
+                                arguments_sha256=arguments_digest,
+                                decision=current_decision,
+                                approval_granted=approved,
                             )
                             add_trace(
                                 "tool_dispatched",
@@ -620,7 +659,8 @@ class AgentExecutionEngine:
                             return await self.tool_executor.execute(
                                 current_call,
                                 authorization=current_decision,
-                                _capability=capability,
+                                execution_authorization=execution_authorization,
+                                run_id=config.run_id,
                                 expected_definition=current_definition,
                                 timeout_seconds=max(
                                     0.000001,

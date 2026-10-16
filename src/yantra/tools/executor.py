@@ -2,57 +2,29 @@
 
 from __future__ import annotations
 
-import asyncio
-import hashlib
-import json
-from typing import Any
+from threading import Lock
+from uuid import UUID
 
 from pydantic import JsonValue, TypeAdapter
 
 from yantra.core.errors import ToolNotFoundError, ToolValidationError
 from yantra.core.messages import ToolCall, ToolResult
-from yantra.tools.base import ExecutionMode, ToolDefinition
-from yantra.tools.policy import PolicyDecision, PolicyEffect
+from yantra.tools.base import ToolDefinition
+from yantra.tools.execution import (
+    ExecutionAuthorization,
+    ExecutionBoundary,
+    ExecutionLimits,
+    ExecutionResultStatus,
+    InProcessExecutionBoundary,
+    ToolExecutionBoundaryMode,
+    canonical_json_digest,
+    verify_execution_authorization,
+)
+from yantra.tools.policy import PolicyDecision
 from yantra.tools.registry import ToolRegistry
+from yantra.tools.subprocess_boundary import SubprocessExecutionBoundary
 
 _JSON_VALUE = TypeAdapter(JsonValue)
-
-
-class _ExecutionCapability:
-    """Opaque executor-instance-bound authority minted only by the engine path."""
-
-    __slots__ = ("_seal", "call_id", "name", "arguments_sha256", "definition", "approved")
-
-    def __init__(
-        self,
-        seal: object,
-        call: ToolCall,
-        definition: ToolDefinition,
-        *,
-        approved: bool,
-    ) -> None:
-        self._seal = seal
-        self.call_id = call.call_id
-        self.name = call.name
-        self.arguments_sha256 = _arguments_digest(call.arguments)
-        self.definition = definition
-        self.approved = approved
-
-    def matches(self, seal: object, call: ToolCall, definition: ToolDefinition) -> bool:
-        return (
-            self._seal is seal
-            and self.call_id == call.call_id
-            and self.name == call.name
-            and self.definition is definition
-            and self.arguments_sha256 == _arguments_digest(call.arguments)
-        )
-
-
-def _arguments_digest(arguments: object) -> str:
-    encoded = json.dumps(
-        arguments, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
-    )
-    return hashlib.sha256(encoded.encode("utf-8", errors="strict")).hexdigest()
 
 
 class ToolExecutor:
@@ -62,25 +34,34 @@ class ToolExecutor:
     recover or explain the failure. Cancellation is deliberately not caught.
     """
 
-    def __init__(self, registry: ToolRegistry) -> None:
-        self.registry = registry
-        self.__capability_seal = object()
-
-    def _issue_capability(
+    def __init__(
         self,
-        call: ToolCall,
-        definition: ToolDefinition,
+        registry: ToolRegistry,
         *,
-        approved: bool,
-    ) -> _ExecutionCapability:
-        return _ExecutionCapability(self.__capability_seal, call, definition, approved=approved)
+        subprocess_boundary: SubprocessExecutionBoundary | None = None,
+        execution_limits: ExecutionLimits | None = None,
+    ) -> None:
+        self.registry = registry
+        self.__authorization_key: bytes | None = None
+        self.__consumed_authorizations: set[UUID] = set()
+        self.__authorization_lock = Lock()
+        self.in_process_boundary: ExecutionBoundary = InProcessExecutionBoundary()
+        self.subprocess_boundary = subprocess_boundary or SubprocessExecutionBoundary(
+            execution_limits or ExecutionLimits()
+        )
+
+    def _bind_authorization_key(self, key: bytes) -> None:
+        if self.__authorization_key is not None and self.__authorization_key != key:
+            raise ValueError("executor is already bound to another execution authority")
+        self.__authorization_key = key
 
     async def execute(
         self,
         call: ToolCall,
         *,
         authorization: PolicyDecision | None = None,
-        _capability: _ExecutionCapability | None = None,
+        execution_authorization: ExecutionAuthorization | None = None,
+        run_id: UUID | None = None,
         expected_definition: ToolDefinition | None = None,
         timeout_seconds: float | None = None,
     ) -> ToolResult:
@@ -94,28 +75,27 @@ class ToolExecutor:
                 call, "tool_not_permitted", "tool configuration changed during authorization"
             )
 
-        if not isinstance(_capability, _ExecutionCapability) or not _capability.matches(
-            self.__capability_seal, call, definition
-        ):
-            return self.failure(call, "tool_not_permitted", "tool is not authorized for this run")
-        if authorization is None or type(authorization) is not PolicyDecision:
-            return self.failure(call, "tool_not_permitted", "tool is not authorized for this run")
-        if authorization.effect != PolicyEffect.ALLOW and not (
-            authorization.effect == PolicyEffect.APPROVAL_REQUIRED and _capability.approved
-        ):
-            if authorization.effect == PolicyEffect.APPROVAL_REQUIRED:
-                return self.policy_failure(
-                    call,
-                    "tool_approval_required",
-                    "tool execution requires approval, which is unavailable",
-                    authorization,
-                )
-            return self.policy_failure(
-                call,
-                "tool_not_permitted",
-                "tool is not authorized for this run",
-                authorization,
+        if (
+            self.__authorization_key is None
+            or execution_authorization is None
+            or run_id is None
+            or not verify_execution_authorization(
+                execution_authorization,
+                self.__authorization_key,
+                run_id=run_id,
+                call_id=call.call_id,
+                definition=definition,
+                arguments_sha256=canonical_json_digest(call.arguments),
             )
+            or (authorization is not None and authorization != execution_authorization.decision)
+        ):
+            return self.failure(call, "tool_not_permitted", "tool is not authorized for this run")
+        with self.__authorization_lock:
+            if execution_authorization.invocation_id in self.__consumed_authorizations:
+                return self.failure(
+                    call, "tool_not_permitted", "execution authority was already used"
+                )
+            self.__consumed_authorizations.add(execution_authorization.invocation_id)
 
         try:
             arguments = definition.validate_input(call.arguments)
@@ -132,31 +112,66 @@ class ToolExecutor:
                 else min(effective_timeout, definition.timeout_seconds)
             )
 
+        if definition.execution_boundary == ToolExecutionBoundaryMode.SUBPROCESS:
+            boundary: ExecutionBoundary = self.subprocess_boundary
+        else:
+            boundary = self.in_process_boundary
+
         try:
-            operation = self._invoke(definition, arguments)
-            value = (
-                await operation
-                if effective_timeout is None
-                else await asyncio.wait_for(operation, timeout=effective_timeout)
+            execution = await boundary.execute(
+                definition,
+                arguments,
+                invocation_id=execution_authorization.invocation_id,
+                timeout_seconds=effective_timeout,
             )
+            if execution.status != ExecutionResultStatus.SUCCEEDED:
+                return self._execution_failure(call, execution.status)
+            value = execution.value
             validated = definition.validate_output(value)
             if hasattr(validated, "model_dump"):
                 value = validated.model_dump(mode="json")
             else:
                 value = validated
             result = _JSON_VALUE.validate_python(value)
-        except TimeoutError:
-            return self.failure(call, "tool_timeout", "tool execution exceeded its timeout")
         except ToolValidationError:
             return self.failure(call, "invalid_output", "tool output failed schema validation")
         except Exception:
             return self.failure(call, "tool_exception", "tool execution failed")
         return ToolResult(call_id=call.call_id, name=call.name, result=result)
 
-    async def _invoke(self, definition: ToolDefinition, arguments: Any) -> Any:
-        if definition.execution_mode == ExecutionMode.ASYNC:
-            return await definition.executor(arguments)
-        return await asyncio.to_thread(definition.executor, arguments)
+    @staticmethod
+    def _execution_failure(call: ToolCall, status: ExecutionResultStatus) -> ToolResult:
+        errors = {
+            ExecutionResultStatus.TIMEOUT: ("tool_timeout", "tool execution exceeded its timeout"),
+            ExecutionResultStatus.CANCELLED: ("tool_cancelled", "tool execution was cancelled"),
+            ExecutionResultStatus.STARTUP_FAILURE: (
+                "tool_worker_startup_failed",
+                "tool worker could not be started",
+            ),
+            ExecutionResultStatus.PROTOCOL_FAILURE: (
+                "tool_worker_protocol_error",
+                "tool worker returned an invalid response",
+            ),
+            ExecutionResultStatus.UNEXPECTED_EXIT: (
+                "tool_worker_failed",
+                "tool worker exited unexpectedly",
+            ),
+            ExecutionResultStatus.REQUEST_TOO_LARGE: (
+                "tool_request_too_large",
+                "tool invocation exceeds the worker request limit",
+            ),
+            ExecutionResultStatus.RESPONSE_TOO_LARGE: (
+                "tool_response_too_large",
+                "tool worker response exceeds the configured limit",
+            ),
+            ExecutionResultStatus.WORKER_LIMIT: (
+                "tool_worker_limit",
+                "maximum concurrent worker capacity was reached",
+            ),
+            ExecutionResultStatus.TOOL_ERROR: ("tool_exception", "tool execution failed"),
+        }
+        code, message = errors.get(status, ("tool_worker_failed", "tool worker execution failed"))
+        return ToolExecutor.failure(call, code, message)
 
     @staticmethod
     def failure(call: ToolCall, code: str, message: str) -> ToolResult:
