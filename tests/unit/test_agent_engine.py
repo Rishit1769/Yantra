@@ -223,7 +223,12 @@ async def test_multi_turn_workflow_preserves_history_and_allows_repeated_tool_na
         ]
     )
     result = await engine_for(provider, registry).run(
-        AgentRunConfig(model="test/model", messages=(user_message("task"),), max_steps=3)
+        AgentRunConfig(
+            model="test/model",
+            messages=(user_message("task"),),
+            max_steps=3,
+            tool_names=("demo.echo",),
+        )
     )
 
     assert result.output == "combined"
@@ -266,6 +271,121 @@ async def test_tool_name_allowlist_blocks_registered_but_disabled_tool() -> None
 
 
 @pytest.mark.asyncio
+async def test_empty_allowlist_denies_every_registered_tool_and_advertises_none() -> None:
+    calls = 0
+
+    class Input(BaseModel):
+        text: str
+
+    def side_effect(arguments: Input) -> Input:
+        nonlocal calls
+        calls += 1
+        return arguments
+
+    registry = ToolRegistry()
+    registry.register(
+        ToolDefinition(
+            name="demo.echo",
+            input_model=Input,
+            executor=side_effect,
+            execution_mode=ExecutionMode.SYNC,
+        )
+    )
+    provider = SequenceProvider(
+        [
+            lambda request: tool_response(
+                request,
+                (ToolCall(call_id="denied-1", name="demo.echo", arguments={"text": "x"}),),
+            ),
+            lambda request: text_response(request, "denial observed"),
+        ]
+    )
+
+    result = await engine_for(provider, registry).run(
+        AgentRunConfig(model="test/model", messages=(user_message(),))
+    )
+
+    assert calls == 0
+    assert provider.requests[0].tools == ()
+    assert result.tool_results[0].call_id == "denied-1"
+    assert result.tool_results[0].result["error_code"] == "tool_not_permitted"
+    assert len(provider.requests) == 2
+
+
+@pytest.mark.asyncio
+async def test_allowlist_advertises_only_authorized_tool_and_unknown_names_fail_closed() -> None:
+    registry = echo_registry()
+
+    def other(arguments: BaseModel) -> BaseModel:
+        return arguments
+
+    class Input(BaseModel):
+        value: int
+
+    registry.register(
+        ToolDefinition(
+            name="demo.other",
+            input_model=Input,
+            executor=other,
+            execution_mode=ExecutionMode.SYNC,
+        )
+    )
+    provider = SequenceProvider([lambda request: text_response(request, "done")])
+    await engine_for(provider, registry).run(
+        AgentRunConfig(
+            model="test/model",
+            messages=(user_message(),),
+            tool_names=("demo.echo", "not.registered"),
+        )
+    )
+    assert [schema.name for schema in provider.requests[0].tools] == ["demo.echo"]
+
+
+@pytest.mark.asyncio
+async def test_multiple_tools_authorize_and_execute_only_named_tool() -> None:
+    invoked: list[str] = []
+    registry = echo_registry()
+
+    class Input(BaseModel):
+        value: int
+
+    def restricted(arguments: Input) -> Input:
+        invoked.append("demo.restricted")
+        return arguments
+
+    registry.register(
+        ToolDefinition(
+            name="demo.restricted",
+            input_model=Input,
+            executor=restricted,
+            execution_mode=ExecutionMode.SYNC,
+        )
+    )
+    provider = SequenceProvider(
+        [
+            lambda request: tool_response(
+                request,
+                (
+                    ToolCall(call_id="allowed-1", name="demo.echo", arguments={"text": "ok"}),
+                    ToolCall(call_id="blocked-1", name="demo.restricted", arguments={"value": 1}),
+                ),
+            ),
+            lambda request: text_response(request, "observed"),
+        ]
+    )
+    result = await engine_for(provider, registry).run(
+        AgentRunConfig(model="test/model", messages=(user_message(),), tool_names=("demo.echo",))
+    )
+
+    assert [schema.name for schema in provider.requests[0].tools] == ["demo.echo"]
+    assert invoked == []
+    assert [item.call_id for item in result.tool_results] == ["allowed-1", "blocked-1"]
+    assert not result.tool_results[0].is_error
+    assert result.tool_results[1].is_error
+    assert result.tool_results[1].result["error_code"] == "tool_not_permitted"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("call", "expected_code"),
     [
@@ -283,7 +403,7 @@ async def test_tool_failures_become_structured_observations(
         ]
     )
     result = await engine_for(provider, echo_registry()).run(
-        AgentRunConfig(model="test/model", messages=(user_message(),))
+        AgentRunConfig(model="test/model", messages=(user_message(),), tool_names=(call.name,))
     )
 
     assert result.output == "recovered"
@@ -337,7 +457,11 @@ async def test_tool_exception_and_timeout_are_structured_observations() -> None:
         ]
     )
     result = await engine_for(provider, registry).run(
-        AgentRunConfig(model="test/model", messages=(user_message(),))
+        AgentRunConfig(
+            model="test/model",
+            messages=(user_message(),),
+            tool_names=("demo.broken", "demo.timeout"),
+        )
     )
 
     assert result.output == "recovered"
@@ -359,7 +483,12 @@ async def test_max_steps_prevents_repeated_tool_loop() -> None:
         [lambda request, call=call: tool_response(request, (call,)) for call in calls]
     )
     result = await engine_for(provider, echo_registry()).run(
-        AgentRunConfig(model="test/model", messages=(user_message(),), max_steps=2)
+        AgentRunConfig(
+            model="test/model",
+            messages=(user_message(),),
+            max_steps=2,
+            tool_names=("demo.echo",),
+        )
     )
 
     assert result.termination_reason == AgentTerminationReason.MAX_STEPS
@@ -378,7 +507,12 @@ async def test_final_response_at_step_boundary_completes() -> None:
         ]
     )
     result = await engine_for(provider, echo_registry()).run(
-        AgentRunConfig(model="test/model", messages=(user_message(),), max_steps=2)
+        AgentRunConfig(
+            model="test/model",
+            messages=(user_message(),),
+            max_steps=2,
+            tool_names=("demo.echo",),
+        )
     )
     assert result.state == RunState.COMPLETED
     assert result.output == "boundary complete"
@@ -399,7 +533,12 @@ async def test_tool_call_batch_over_budget_is_rejected_without_partial_execution
         ]
     )
     result = await engine_for(provider, echo_registry()).run(
-        AgentRunConfig(model="test/model", messages=(user_message(),), max_tool_calls=1)
+        AgentRunConfig(
+            model="test/model",
+            messages=(user_message(),),
+            max_tool_calls=1,
+            tool_names=("demo.echo",),
+        )
     )
     assert result.termination_reason == AgentTerminationReason.TOOL_FAILURE
     assert result.error_code == "tool_budget_exhausted"
@@ -417,7 +556,12 @@ async def test_zero_tool_budget_executes_no_proposals() -> None:
         ]
     )
     result = await engine_for(provider, echo_registry()).run(
-        AgentRunConfig(model="test/model", messages=(user_message(),), max_tool_calls=0)
+        AgentRunConfig(
+            model="test/model",
+            messages=(user_message(),),
+            max_tool_calls=0,
+            tool_names=("demo.echo",),
+        )
     )
     assert result.termination_reason == AgentTerminationReason.TOOL_FAILURE
     assert result.tool_results == ()
@@ -455,7 +599,10 @@ async def test_explicit_cancellation_cancels_in_flight_async_tool() -> None:
     token = CancellationToken()
     task = asyncio.create_task(
         engine_for(provider, registry).run(
-            AgentRunConfig(model="test/model", messages=(user_message(),)), cancellation=token
+            AgentRunConfig(
+                model="test/model", messages=(user_message(),), tool_names=("demo.slow",)
+            ),
+            cancellation=token,
         )
     )
     await asyncio.wait_for(started.wait(), timeout=1)
@@ -553,7 +700,12 @@ async def test_total_deadline_cancels_async_tool_and_preserves_observation_histo
         ]
     )
     result = await engine_for(provider, registry).run(
-        AgentRunConfig(model="test/model", messages=(user_message(),), timeout_seconds=0.05)
+        AgentRunConfig(
+            model="test/model",
+            messages=(user_message(),),
+            timeout_seconds=0.05,
+            tool_names=("demo.hang",),
+        )
     )
 
     assert result.termination_reason == AgentTerminationReason.TIMEOUT
@@ -597,7 +749,8 @@ async def test_cancellation_between_tool_proposals_prevents_next_handler() -> No
         ]
     )
     result = await engine_for(provider, registry).run(
-        AgentRunConfig(model="test/model", messages=(user_message(),)), cancellation=token
+        AgentRunConfig(model="test/model", messages=(user_message(),), tool_names=("demo.track",)),
+        cancellation=token,
     )
 
     assert result.state == RunState.CANCELLED
@@ -729,7 +882,7 @@ async def test_missing_usage_on_intermediate_call_keeps_aggregate_unknown() -> N
         ]
     )
     result = await engine_for(provider, echo_registry()).run(
-        AgentRunConfig(model="test/model", messages=(user_message(),))
+        AgentRunConfig(model="test/model", messages=(user_message(),), tool_names=("demo.echo",))
     )
     assert result.output == "done"
     assert result.usage is None
@@ -764,6 +917,7 @@ async def test_token_and_cost_budgets_terminate_when_reliably_reported() -> None
     assert result.termination_reason == AgentTerminationReason.COST_BUDGET
     assert result.total_cost_usd == Decimal("0.10")
     assert result.cost_budget_enforced
+    assert provider.requests[0].generation.max_output_tokens == 3
 
 
 @pytest.mark.asyncio
@@ -783,6 +937,78 @@ async def test_token_budget_stops_before_more_tool_execution() -> None:
     )
     assert result.termination_reason == AgentTerminationReason.TOKEN_BUDGET
     assert result.tool_results == ()
+    assert provider.requests[0].generation.max_output_tokens == 2
+
+
+@pytest.mark.asyncio
+async def test_token_budget_excess_on_final_response_is_reported_and_not_success() -> None:
+    provider = SequenceProvider(
+        [
+            lambda request: text_response(
+                request,
+                "over budget",
+                TokenUsage(input_tokens=3, output_tokens=2, total_tokens=5),
+            )
+        ]
+    )
+    result = await engine_for(provider).run(
+        AgentRunConfig(model="test/model", messages=(user_message(),), token_budget=4)
+    )
+    assert result.termination_reason == AgentTerminationReason.TOKEN_BUDGET
+    assert result.error_code == "token_budget_exhausted"
+    assert result.usage is not None and result.usage.total_tokens == 5
+    assert result.final_message is None
+    assert len(provider.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_budget_accounting_after_tool_execution_prevents_next_model_request() -> None:
+    usage = TokenUsage(input_tokens=1, output_tokens=1, total_tokens=2)
+    provider = SequenceProvider(
+        [
+            lambda request: tool_response(
+                request,
+                (ToolCall(call_id="budget-first", name="demo.echo", arguments={"text": "x"}),),
+                usage,
+            ),
+            lambda request: tool_response(
+                request,
+                (ToolCall(call_id="budget-second", name="demo.echo", arguments={"text": "y"}),),
+                usage,
+            ),
+        ]
+    )
+    result = await engine_for(provider, echo_registry()).run(
+        AgentRunConfig(
+            model="test/model",
+            messages=(user_message(),),
+            token_budget=4,
+            tool_names=("demo.echo",),
+        )
+    )
+    assert result.termination_reason == AgentTerminationReason.TOKEN_BUDGET
+    assert [item.call_id for item in result.tool_results] == ["budget-first"]
+    assert len(provider.requests) == 2
+    assert provider.requests[0].generation.max_output_tokens == 4
+    assert provider.requests[1].generation.max_output_tokens == 2
+
+
+@pytest.mark.asyncio
+async def test_exact_token_budget_boundary_can_finish_without_more_work() -> None:
+    provider = SequenceProvider(
+        [
+            lambda request: text_response(
+                request,
+                "exact",
+                TokenUsage(input_tokens=2, output_tokens=2, total_tokens=4),
+            )
+        ]
+    )
+    result = await engine_for(provider).run(
+        AgentRunConfig(model="test/model", messages=(user_message(),), token_budget=4)
+    )
+    assert result.termination_reason == AgentTerminationReason.FINAL_RESPONSE
+    assert result.output == "exact"
 
 
 @pytest.mark.asyncio
@@ -847,7 +1073,7 @@ async def test_provider_failure_after_tool_cycle_preserves_prior_progress() -> N
         ]
     )
     result = await engine_for(provider, echo_registry()).run(
-        AgentRunConfig(model="test/model", messages=(user_message(),))
+        AgentRunConfig(model="test/model", messages=(user_message(),), tool_names=("demo.echo",))
     )
     assert result.termination_reason == AgentTerminationReason.PROVIDER_FAILURE
     assert len(result.steps) == 1
@@ -893,7 +1119,12 @@ async def test_same_tool_name_can_repeat_with_distinct_call_ids() -> None:
         ]
     )
     result = await engine_for(provider, echo_registry()).run(
-        AgentRunConfig(model="test/model", messages=(user_message(),), max_steps=3)
+        AgentRunConfig(
+            model="test/model",
+            messages=(user_message(),),
+            max_steps=3,
+            tool_names=("demo.echo",),
+        )
     )
     assert result.output == "done"
     assert [item.call_id for item in result.tool_results] == ["new-id-1", "new-id-2"]

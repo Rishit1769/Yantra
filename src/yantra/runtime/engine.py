@@ -11,6 +11,7 @@ from yantra.core.contracts import TokenUsage
 from yantra.core.errors import ProviderError, YantraError
 from yantra.core.messages import Message, MessageRole, ToolResult
 from yantra.core.states import RunState, validate_transition
+from yantra.providers.base import GenerationSettings
 from yantra.providers.gateway import GatewayResponse, ModelGateway
 from yantra.runtime.models import (
     AgentRunConfig,
@@ -143,17 +144,25 @@ class AgentExecutionEngine:
                             "token budget exhausted",
                         )
                 set_state(RunState.WAITING_FOR_MODEL, event="model_waiting")
+                remaining_tokens = None
+                if config.token_budget is not None:
+                    remaining_tokens = (
+                        config.token_budget
+                        if total_usage is None
+                        else max(1, config.token_budget - total_usage.total_tokens)
+                    )
 
-                async def request_model() -> GatewayResponse:
+                async def request_model(output_token_limit: int | None) -> GatewayResponse:
                     return await self.gateway.generate(
                         model=config.model,
                         messages=messages,
                         tools=self._schemas(config),
+                        generation=GenerationSettings(max_output_tokens=output_token_limit),
                         timeout_seconds=config.timeout_seconds,
                     )
 
                 gateway_result = await self._await(
-                    request_model,
+                    lambda output_token_limit=remaining_tokens: request_model(output_token_limit),
                     cancellation,
                     deadline=deadline,
                 )
@@ -228,10 +237,15 @@ class AgentExecutionEngine:
                         "cost budget cannot be verified from available gateway cost data",
                     )
                 if (
-                    response.message.tool_calls
-                    and config.token_budget is not None
+                    config.token_budget is not None
                     and total_usage is not None
-                    and total_usage.total_tokens >= config.token_budget
+                    and (
+                        total_usage.total_tokens > config.token_budget
+                        or (
+                            response.message.tool_calls
+                            and total_usage.total_tokens >= config.token_budget
+                        )
+                    )
                 ):
                     return self._result(
                         config,
@@ -276,7 +290,10 @@ class AgentExecutionEngine:
                 if (
                     config.cost_budget_usd is not None
                     and cost_known
-                    and total_cost > config.cost_budget_usd
+                    and (
+                        total_cost > config.cost_budget_usd
+                        or (response.message.tool_calls and total_cost >= config.cost_budget_usd)
+                    )
                 ):
                     return self._result(
                         config,
@@ -340,7 +357,7 @@ class AgentExecutionEngine:
                     )
                 set_state(RunState.WAITING_FOR_TOOL, event="tools_waiting")
                 for call in response.message.tool_calls:
-                    if config.tool_names and call.name not in config.tool_names:
+                    if call.name not in config.tool_names:
                         result = ToolResult(
                             call_id=call.call_id,
                             name=call.name,
@@ -480,9 +497,8 @@ class AgentExecutionEngine:
 
     def _schemas(self, config: AgentRunConfig):
         definitions = self.tool_executor.registry.list()
-        if config.tool_names:
-            names = set(config.tool_names)
-            definitions = tuple(tool for tool in definitions if tool.name in names)
+        names = set(config.tool_names)
+        definitions = tuple(tool for tool in definitions if tool.name in names)
         return tuple(tool.provider_schema() for tool in definitions)
 
     async def _await(

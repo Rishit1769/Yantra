@@ -93,7 +93,13 @@ class AgentRunResult(BaseModel):
     usage: TokenUsage | None = None
     usage_complete: bool = False
     total_cost_usd: Decimal | None = None
-    cost_budget_enforced: bool = False
+    cost_budget_enforced: bool = Field(
+        default=False,
+        description=(
+            "Known post-response cost was checked to prevent further work; "
+            "this is not a billing cap."
+        ),
+    )
     error_code: str | None = None
     error_message: str | None = None
     trace: tuple[ExecutionTraceEntry, ...] = ()
