@@ -5,7 +5,7 @@ This site combines implemented YANTRA-001 contracts and the YANTRA-002 model gat
 ## Start here
 
 - [Project vision](project/vision.md), [goals](project/goals.md), [non-goals](project/non-goals.md), [terminology](project/terminology.md), [feature matrix](project/feature-matrix.md)
-- [Introduction](getting-started/introduction.md), [source installation](getting-started/installation.md), [core quickstart](getting-started/quickstart.md), [configuration](getting-started/configuration.md), [first agent](getting-started/first-agent.md)
+- [Introduction](getting-started/introduction.md), [source installation](getting-started/installation.md), [core quickstart](getting-started/quickstart.md), [agent runtime quickstart](guides/agent-quickstart.md), [configuration](getting-started/configuration.md), [first agent](getting-started/first-agent.md)
 - [Architecture overview](architecture/overview.md), [system design](architecture/system-design.md), [runtime kernel](architecture/runtime-kernel.md), [agent execution engine](architecture/agent-execution-engine.md), [execution lifecycle](architecture/execution-lifecycle.md), [state machine](architecture/state-machine.md)
 - [Core API reference](specifications/core-runtime-api.md), [specifications](specifications/agent-contract.md), [compatibility policy](specifications/compatibility-policy.md)
 - [Security threat model](security/threat-model.md), [development standards](development/coding-standards.md), [roadmap](../ROADMAP.md)
@@ -39,4 +39,4 @@ Feature specifications are organized in [features](features/). Major systems inc
 
 ## Status vocabulary
 
-Feature implementation status is one of Proposed, Specified, In Development, Implemented, Verified, or Deprecated. YANTRA-001 contracts and the YANTRA-002 gateway foundation are implemented with local mocked tests; YANTRA-003-V02 has a locally tested bounded loop with failure, budget, timeout, and cancellation coverage on the feature branch. Durable agent systems remain unimplemented. Live provider behavior and GitHub Actions on macOS/Windows have not been verified.
+Feature implementation status is one of Proposed, Specified, In Development, Implemented, Verified, or Deprecated. YANTRA-001 contracts and the YANTRA-002 gateway foundation are implemented with local mocked tests; YANTRA-003-V03 adds a runnable offline agent example and human-readable diagnostics over the locally verified V02 bounded loop. Durable agent systems remain unimplemented. Live provider behavior and GitHub Actions on macOS/Windows have not been verified.

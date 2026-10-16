@@ -106,6 +106,10 @@ unavailable. Gateway and tool timeouts preserve completed progress. Sync tool
 work uses a worker thread and cannot be forcibly stopped by asyncio
 cancellation. The engine does not add shell, filesystem, browser, MCP,
 persistence, or authorization-policy capabilities. See [agent execution engine](../architecture/agent-execution-engine.md).
+`yantra.runtime.format_run_result(result)` formats the summary and sanitized
+trace for display without including conversation bodies, tool arguments, or
+provider reasoning. The complete deterministic example is in the [agent runtime
+quickstart](../guides/agent-quickstart.md).
 
 ## Limitations
 

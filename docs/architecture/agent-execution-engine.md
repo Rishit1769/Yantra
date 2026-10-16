@@ -73,7 +73,9 @@ The engine accepts a `ModelGateway` and a `ToolRegistry` (or `ToolExecutor`).
 limits, unique optional tool allowlist, and optional token/cost budgets.
 `AgentRunResult` exposes the terminal state, termination reason, final
 assistant message, ordered steps/tool results, known usage/cost, and sanitized
-trace metadata. Runs keep their message history, counters, and trace local, so
+trace metadata. The public `format_run_result(result)` helper renders a
+payload-minimal human-readable summary and trace without dumping messages,
+tool arguments, or reasoning. Runs keep their message history, counters, and trace local, so
 one engine can serve concurrent independent runs when its registry is not
 mutated during execution.
 
@@ -137,4 +139,5 @@ partial-progress retention, trace redaction, and concurrent run isolation.
 This does not establish live provider compatibility, Windows behavior, hosted
 CI results, hard termination of synchronous work, durable recovery, or
 exactly-once external effects. See the [core runtime API](../specifications/core-runtime-api.md)
-for the broader API and limitations.
+for the broader API and limitations, and the [agent runtime quickstart](../guides/agent-quickstart.md)
+for an executable offline demonstration.
