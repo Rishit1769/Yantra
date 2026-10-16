@@ -3,8 +3,9 @@
 **Status: Engineering-accepted on the feature branch; experimental and unreleased.**
 The YANTRA-003 runtime has local verification evidence, but is not included in
 the unreleased `0.2.0` package. Its available tool authorization is an explicit
-per-run name allowlist; `permission_scopes` remain descriptive, and no general
-scope/policy engine is implemented. Usage and cost accounting are best-effort,
+per-run name allowlist. YANTRA-004-V01 adds a focused logical scope policy,
+documented in [secure tool runtime](../security/secure-tool-runtime.md); this
+is not a general policy engine or sandbox. Usage and cost accounting are best-effort,
 not a hard spending ceiling. See the YANTRA-003 engineering closure in
 [`milestones.md`](../roadmap/milestones.md).
 
@@ -103,9 +104,12 @@ tools. Registration does not authorize execution, and execution independently
 checks each model proposal even when its schema was not advertised. Unregistered
 names in the allowlist do not grant access and are simply ineffective (only
 registered names are advertised). A proposal outside the allowlist becomes a
-structured `tool_not_permitted` observation. `permission_scopes` remains
-descriptive metadata: this milestone has no scope evaluator, and the field
-itself provides no execution enforcement. A batch that exceeds the remaining
+structured `tool_not_permitted` observation. When a `PolicyContext` is provided,
+`permission_scopes` are enforced as exact-match required grants, with explicit
+denials taking precedence. Legacy unscoped tools remain usable only when
+`allow_legacy_unscoped_tools` is enabled and the name is allowlisted. An
+approval-required decision does not execute. These checks are logical
+authorization, not a sandbox. A batch that exceeds the remaining
 tool-call budget is rejected in full, without partial execution.
 
 Compatibility note: the default empty allowlist previously exposed all

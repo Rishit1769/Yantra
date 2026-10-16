@@ -25,7 +25,7 @@ Feature specifications are organized in [features](features/). Major systems inc
 
 ## Trust, resilience, and operations
 
-- [Security](security/threat-model.md), [permissions](security/permission-system.md), [sandbox](security/sandbox-security.md), [prompt injection](security/prompt-injection.md), [browser security](security/browser-security.md)
+- [Security](security/threat-model.md), [permissions](security/permission-system.md), [secure tool runtime](security/secure-tool-runtime.md), [sandbox](security/sandbox-security.md), [prompt injection](security/prompt-injection.md), [browser security](security/browser-security.md)
 - [Reliability](reliability/fault-tolerance.md), [retries](reliability/retries.md), [cancellation](reliability/cancellation.md), [recovery](reliability/crash-recovery.md), [idempotency](reliability/idempotency.md)
 - [Deployment](deployment/local.md), [Docker](deployment/docker.md), [YANTRA PostgreSQL runbook](deployment/yantra-postgresql.md), [production gates](deployment/production.md), [observability](features/observability.md)
 
@@ -34,9 +34,9 @@ Feature specifications are organized in [features](features/). Major systems inc
 - [NIRMAAN boundary](integrations/nirmaan.md); provider integration pages are design notes, not claims of working integrations.
 - [Research objectives](research/objectives.md), [adaptive context](research/adaptive-context.md), [adaptive routing](research/adaptive-routing.md), [evidence-guided recovery](research/evidence-guided-recovery.md), [skill learning](research/skill-learning.md), [benchmarks](research/benchmarks.md), [reproducibility](research/reproducibility.md)
 - [Development setup](development/setup.md), [YANTRA-002 gateway smoke testing](development/smoke-testing.md), [testing strategy](development/testing-strategy.md), [documentation standards](development/documentation-standards.md), [release process](development/release-process.md)
-- [Core runtime API (YANTRA-001–YANTRA-003)](specifications/core-runtime-api.md)
+- [Core runtime API (YANTRA-001–YANTRA-004-V01)](specifications/core-runtime-api.md)
 - [Milestones](roadmap/milestones.md), [dependencies](roadmap/feature-dependencies.md), [acceptance criteria](roadmap/acceptance-criteria.md), [production readiness](roadmap/production-readiness.md)
 
 ## Status vocabulary
 
-Feature implementation status is one of Proposed, Specified, In Development, Implemented, Verified, or Deprecated. YANTRA-001 contracts and the YANTRA-002 gateway foundation are implemented with local mocked tests; YANTRA-003 adds a bounded offline agent runtime, explicit deny-by-default per-run tool-name authorization, usage controls, and sanitized diagnostics. It does not provide a general scope/policy authorization engine or durable agent systems. Live provider behavior and GitHub Actions on macOS/Windows have not been verified.
+Feature implementation status is one of Proposed, Specified, In Development, Implemented, Verified, or Deprecated. YANTRA-001 contracts and the YANTRA-002 gateway foundation are implemented with local mocked tests; YANTRA-003 adds a bounded offline agent runtime, explicit deny-by-default per-run tool-name authorization, usage controls, and sanitized diagnostics. YANTRA-004-V01 adds exact-match logical scope authorization, while broader policy, approval, sandbox, and durable agent systems remain out of scope. Live provider behavior and GitHub Actions on macOS/Windows have not been verified.

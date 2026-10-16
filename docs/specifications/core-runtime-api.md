@@ -1,6 +1,6 @@
-# Core Runtime API (YANTRA-001–YANTRA-003)
+# Core Runtime API (YANTRA-001–YANTRA-004-V01)
 
-**Status:** YANTRA-001 contracts and the YANTRA-002 model gateway have local test coverage on macOS. This page also documents the experimental YANTRA-003 bounded execution API, engineering-accepted on its feature branch but not included in the unreleased `0.2.0` package. YANTRA-003 authorizes tools through an explicit per-run name allowlist (empty means deny all); registry membership alone does not grant permission. `permission_scopes` are descriptive, and there is no general scope/policy engine. Usage and cost limits are best-effort accounting, not a hard spending ceiling. The configured 3-OS/3-Python GitHub Actions matrix has not run on hosted CI. Live provider evidence is limited to user-reported OpenCode Go results for one model and was not rerun for v0.2.0. Durable persistence and a runtime scheduler are not provided.
+**Status:** YANTRA-001 contracts and the YANTRA-002 model gateway have local test coverage on macOS. This page also documents the experimental YANTRA-003 bounded execution API, engineering-accepted on its feature branch but not included in the unreleased `0.2.0` package. YANTRA-003 authorizes tools through an explicit per-run name allowlist (empty means deny all); YANTRA-004-V01 adds a focused exact-match scope policy for declared requirements on its feature branch. That addition is not included in `0.2.0`, is not a general policy language or sandbox, and does not imply release approval. Usage and cost limits are best-effort accounting, not a hard spending ceiling. The configured 3-OS/3-Python GitHub Actions matrix has not run on hosted CI. Live provider evidence is limited to user-reported OpenCode Go results for one model and was not rerun for v0.2.0. Durable persistence and a runtime scheduler are not provided.
 
 ## Package and installation
 
@@ -43,7 +43,7 @@ Provider adapters are implemented for OpenAI, Anthropic, Gemini, DeepSeek, Ollam
 
 ## Tools and registry
 
-`ToolDefinition` combines name/description, Pydantic input and optional output model classes, callable, explicit sync/async mode, descriptive required permission scopes, side-effect classification, and optional timeout. It validates input/output without echoing rejected values. `ToolRegistry` implements `register`, `get`, name-sorted `list`, `unregister`, and deterministic `export_provider_schemas`.
+`ToolDefinition` combines name/description, Pydantic input and optional output model classes, callable, explicit sync/async mode, validated required permission scopes, risk classification, side-effect classification, and optional timeout. It validates input/output without echoing rejected values. `ToolRegistry` implements `register`, `get`, name-sorted `list`, `unregister`, and deterministic `export_provider_schemas`.
 
 ```python
 from pydantic import BaseModel
@@ -62,7 +62,7 @@ tool = ToolDefinition(
     output_model=EchoInput,
     executor=echo,
     execution_mode=ExecutionMode.SYNC,
-    permission_scopes=frozenset({"demo:read"}),
+    permission_scopes=frozenset({"demo.read"}),
     side_effect=SideEffect.READ_ONLY,
 )
 registry = ToolRegistry()
@@ -70,7 +70,7 @@ registry.register(tool)
 schema = registry.export_provider_schemas()[0]
 ```
 
-The `permission_scopes` field is metadata only. There is no policy engine or execution dispatcher; registration and model schema export never grant permission. No shell/browser/filesystem tool is included.
+`ToolDefinition.permission_scopes` declares required logical scopes evaluated by the YANTRA-004-V01 tool policy layer. Scoped tools require explicit per-run scope grants in addition to the independent `tool_names` allowlist. Existing unscoped tools retain the explicit `allow_legacy_unscoped_tools` compatibility mode, which does not bypass the name allowlist. Registration and schema export never grant permission. These checks are in-process logical authorization, not a sandbox or OS-level filesystem/network enforcement. See [secure tool runtime](../security/secure-tool-runtime.md).
 
 ## States and events
 
@@ -88,7 +88,7 @@ Public exceptions derive from `YantraError` and include configuration, provider 
 
 `get_logger(name, level=..., **context)` returns a standard-library structured logging facade under `yantra.<name>`. Named fields are attached as `LogRecord` extras. Sensitive field names and common secret patterns are redacted. `exception()` intentionally omits raw tracebacks because exception text may contain secrets. Importing the package does not configure handlers or root logging. This helper is not a substitute for comprehensive secret-aware telemetry review.
 
-## YANTRA-003 agent execution
+## YANTRA-003/004-V01 agent execution and tool policy
 
 `yantra.runtime.AgentExecutionEngine` accepts an existing `ModelGateway` and
 `ToolRegistry`, then runs a bounded asynchronous model/tool loop. It preserves
@@ -102,8 +102,10 @@ structured observations; duplicate call IDs and malformed empty responses fail
 the run. Tool proposals are processed sequentially, allowlists are enforced
 when advertising schemas and independently at execution, and an empty allowlist
 denies all tools. Unknown allowlist names do not grant access. Over-budget
-batches are rejected atomically. `permission_scopes` is descriptive metadata;
-no scope policy engine enforces it. Token budgets pass the remaining budget as
+batches are rejected atomically. When a `PolicyContext` is provided, each
+declared permission scope is enforced as an exact-match grant requirement.
+Unscoped tools follow the explicit legacy compatibility mode described in the
+[secure tool runtime](../security/secure-tool-runtime.md). Token budgets pass the remaining budget as
 the provider output-token limit where supported, then use actual post-response
 usage to stop subsequent work. This does not cap total tokens: prompt tokens
 are not estimated and provider behavior can vary. Cost budgets use
@@ -128,7 +130,7 @@ quickstart](../guides/agent-quickstart.md).
 ## Limitations
 
 YANTRA-003 provides a local bounded loop and controlled registry executor, but
-there is no durable persistence, authorization policy engine, skill system,
+there is no durable persistence, general-purpose authorization policy engine, skill system,
 general-purpose CLI, Redis, pgvector, distributed coordination, or production
 support. Hosted CI execution, Windows compatibility, and production deployment
 controls are not verified. YANTRA is pre-1.0; `0.2.0` does not promise a stable

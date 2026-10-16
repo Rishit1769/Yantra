@@ -8,9 +8,10 @@ from decimal import Decimal
 from typing import TypeVar
 
 from yantra.core.contracts import TokenUsage
-from yantra.core.errors import ProviderError, YantraError
-from yantra.core.messages import Message, MessageRole, ToolResult
+from yantra.core.errors import ProviderError, ToolNotFoundError, YantraError
+from yantra.core.messages import Message, MessageRole, ToolCall, ToolResult
 from yantra.core.states import RunState, validate_transition
+from yantra.core.tools_schema import ProviderToolSchema
 from yantra.providers.base import GenerationSettings
 from yantra.providers.gateway import GatewayResponse, ModelGateway
 from yantra.runtime.models import (
@@ -20,7 +21,17 @@ from yantra.runtime.models import (
     AgentTerminationReason,
     ExecutionTraceEntry,
 )
+from yantra.tools.base import ToolDefinition
 from yantra.tools.executor import ToolExecutor
+from yantra.tools.policy import (
+    DefaultPolicyEvaluator,
+    PolicyContext,
+    PolicyDecision,
+    PolicyEffect,
+    PolicyEvaluator,
+    PolicyReason,
+    PolicyRequest,
+)
 from yantra.tools.registry import ToolRegistry
 
 _T = TypeVar("_T")
@@ -50,9 +61,16 @@ class _CancellationRequested(Exception):
 class AgentExecutionEngine:
     """Execute a bounded model/tool loop using an existing ``ModelGateway``."""
 
-    def __init__(self, gateway: ModelGateway, tools: ToolRegistry | ToolExecutor) -> None:
+    def __init__(
+        self,
+        gateway: ModelGateway,
+        tools: ToolRegistry | ToolExecutor,
+        *,
+        policy_evaluator: PolicyEvaluator | None = None,
+    ) -> None:
         self.gateway = gateway
         self.tool_executor = tools if isinstance(tools, ToolExecutor) else ToolExecutor(tools)
+        self.policy_evaluator = policy_evaluator or DefaultPolicyEvaluator()
 
     async def run(
         self, config: AgentRunConfig, *, cancellation: CancellationToken | None = None
@@ -368,14 +386,34 @@ class AgentExecutionEngine:
                             is_error=True,
                         )
                     else:
-                        result = await self._await(
-                            lambda current_call=call: self.tool_executor.execute(
+                        definition: ToolDefinition | None = None
+                        try:
+                            definition = self.tool_executor.registry.get(call.name)
+                        except ToolNotFoundError:
+                            decision = PolicyDecision(
+                                effect=PolicyEffect.DENY,
+                                reason=PolicyReason.INVALID_POLICY,
+                            )
+                        else:
+                            decision = self._authorize(config, definition)
+
+                        async def execute_tool(
+                            current_call: ToolCall = call,
+                            current_decision: PolicyDecision = decision,
+                            current_definition: ToolDefinition | None = definition,
+                        ) -> ToolResult:
+                            return await self.tool_executor.execute(
                                 current_call,
+                                authorization=current_decision,
+                                expected_definition=current_definition,
                                 timeout_seconds=max(
                                     0.000001,
                                     deadline - asyncio.get_running_loop().time(),
                                 ),
-                            ),
+                            )
+
+                        result = await self._await(
+                            execute_tool,
                             cancellation,
                             deadline=deadline,
                         )
@@ -495,11 +533,70 @@ class AgentExecutionEngine:
                 "model gateway execution failed unexpectedly",
             )
 
-    def _schemas(self, config: AgentRunConfig):
+    def _schemas(self, config: AgentRunConfig) -> tuple[ProviderToolSchema, ...]:
         definitions = self.tool_executor.registry.list()
         names = set(config.tool_names)
         definitions = tuple(tool for tool in definitions if tool.name in names)
-        return tuple(tool.provider_schema() for tool in definitions)
+        eligible: list[ProviderToolSchema] = []
+        for tool in definitions:
+            if self._authorize(config, tool).effect == PolicyEffect.ALLOW:
+                eligible.append(tool.provider_schema())
+        return tuple(eligible)
+
+    def _authorize(self, config: AgentRunConfig, definition: ToolDefinition) -> PolicyDecision:
+        """Apply run authority before consulting a policy that can only restrict it."""
+        required = definition.permission_scopes
+        context = config.permission_context
+        if not required:
+            if not config.allow_legacy_unscoped_tools:
+                return PolicyDecision(
+                    effect=PolicyEffect.DENY,
+                    reason=PolicyReason.POLICY_RESTRICTED,
+                )
+            if context is None:
+                context = PolicyContext()
+        if context is None:
+            return PolicyDecision(effect=PolicyEffect.DENY, reason=PolicyReason.MISSING_CONTEXT)
+        if required & context.denied_scopes:
+            return PolicyDecision(effect=PolicyEffect.DENY, reason=PolicyReason.EXPLICIT_DENY)
+        if not required <= context.granted_scopes:
+            return PolicyDecision(effect=PolicyEffect.DENY, reason=PolicyReason.MISSING_SCOPE)
+        if required & context.approval_required_scopes:
+            return PolicyDecision(
+                effect=PolicyEffect.APPROVAL_REQUIRED,
+                reason=PolicyReason.APPROVAL_REQUIRED,
+            )
+        if definition.risk_level in context.approval_required_risks:
+            return PolicyDecision(
+                effect=PolicyEffect.APPROVAL_REQUIRED,
+                reason=PolicyReason.RISK_RESTRICTED,
+            )
+        request = PolicyRequest(
+            tool_name=definition.name,
+            required_scopes=required,
+            risk_level=definition.risk_level,
+        )
+        try:
+            candidate = self.policy_evaluator.evaluate(request, context)
+        except Exception:
+            return PolicyDecision(effect=PolicyEffect.DENY, reason=PolicyReason.EVALUATOR_ERROR)
+        try:
+            decision = PolicyDecision.model_validate(candidate)
+        except Exception:
+            return PolicyDecision(
+                effect=PolicyEffect.DENY,
+                reason=PolicyReason.INVALID_POLICY,
+            )
+        if (
+            decision.effect == PolicyEffect.ALLOW
+            and not required
+            and config.permission_context is None
+        ):
+            return PolicyDecision(
+                effect=PolicyEffect.ALLOW,
+                reason=PolicyReason.LEGACY_UNSCOPED,
+            )
+        return decision
 
     async def _await(
         self,

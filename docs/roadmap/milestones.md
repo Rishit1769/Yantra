@@ -45,3 +45,11 @@ Adaptive context, adaptive routing, evidence-guided recovery, and skill learning
 **Residual limitations:** No general scope/policy engine or isolated execution sandbox; synchronous tool work may outlive cancellation; no durable run recovery or exactly-once external effects; token/cost accounting is not a hard ceiling. A fresh `0.3.0` package build and hosted macOS/Windows CI results remain unverified.
 
 **Release disposition:** Package version remains `0.2.0`; YANTRA-003 is experimental, is not included in that package, and has no public release approval. Release readiness remains **NOT READY / NO-GO** pending fresh release-artifact verification, hosted CI evidence, and a separate maintainer release decision. Engineering acceptance does not authorize publishing, tagging, merging, or deployment.
+
+## YANTRA-004-V01 Secure Tool Runtime Foundation
+
+**Status: Implemented and locally verified on `feat/yantra-004-secure-tools`; not released.** V01 adds validated exact-match permission scopes, tool risk labels, immutable policy request/context/decision contracts, and a deterministic evaluator. The engine enforces the existing name allowlist independently, requires all declared scopes, gives explicit scope denials precedence, treats approval-required as non-executable, and fails closed on evaluator errors. The executor requires an explicit ALLOW decision. Legacy unscoped tools preserve the prior name-allowlist behavior only when `allow_legacy_unscoped_tools` is enabled; scoped tools cannot use this compatibility path.
+
+**Verification evidence:** 208 offline tests passed, including 24 new policy and handler-non-execution tests; Ruff, formatting, Pyright, and `uv lock --check` passed. Both scoped allow/deny and the existing legacy offline demonstrations completed without network or credential access. This local macOS run does not establish Windows behavior or hosted CI. MkDocs was not installed in the locked environment; edited Markdown links were checked directly.
+
+**Boundary:** V01 supplies logical in-process authorization, not an OS sandbox, side-effect enforcement backend, general policy language, approval workflow, durable recovery, or exactly-once effects. The feature remains experimental, is not included in package version `0.2.0`, and does not constitute release approval.

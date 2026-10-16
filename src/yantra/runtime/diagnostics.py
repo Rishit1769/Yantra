@@ -9,6 +9,7 @@ from yantra.runtime.models import AgentRunResult
 _TOOL_ERROR_CODES = frozenset(
     {
         "tool_not_permitted",
+        "tool_approval_required",
         "tool_not_found",
         "invalid_arguments",
         "tool_timeout",

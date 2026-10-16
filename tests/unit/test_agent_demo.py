@@ -120,7 +120,13 @@ def test_runtime_diagnostics_show_only_allowlisted_tool_error_categories() -> No
                 "result": {"error_code": code, "message": "private exception text"},
                 "is_error": True,
             }
-            for code in ("tool_not_found", "tool_timeout", "invalid_output", "tool_exception")
+            for code in (
+                "tool_not_found",
+                "tool_timeout",
+                "tool_approval_required",
+                "invalid_output",
+                "tool_exception",
+            )
         ),
         {
             "call_id": "Bearer synthetic-missing-category-token",
@@ -152,11 +158,12 @@ def test_runtime_diagnostics_show_only_allowlisted_tool_error_categories() -> No
     assert "error (invalid_arguments)" in output
     assert "error (tool_not_found)" in output
     assert "error (tool_timeout)" in output
+    assert "error (tool_approval_required)" in output
     assert "error (invalid_output)" in output
     assert "error (tool_exception)" in output
-    assert "tool[8]: success" in output
-    assert "tool[6]: error" in output
+    assert "tool[9]: success" in output
     assert "tool[7]: error" in output
+    assert "tool[8]: error" in output
     assert "attacker-controlled-category" not in output
     assert "synthetic-payload-token" not in output
     assert "sk-synthetic-call-secret" not in output

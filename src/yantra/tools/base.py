@@ -12,6 +12,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 from yantra.core.errors import ToolValidationError
 from yantra.core.tools_schema import ProviderToolSchema
+from yantra.tools.policy import PermissionScope, ToolRiskLevel
 
 
 class ExecutionMode(StrEnum):
@@ -42,16 +43,10 @@ class ToolDefinition(BaseModel):
     output_model: type[BaseModel] | None = None
     executor: Callable[..., Any]
     execution_mode: ExecutionMode
-    permission_scopes: frozenset[str] = frozenset()
+    permission_scopes: frozenset[PermissionScope] = frozenset()
+    risk_level: ToolRiskLevel = ToolRiskLevel.LOW
     side_effect: SideEffect = SideEffect.UNKNOWN
     timeout_seconds: float | None = Field(default=None, gt=0, allow_inf_nan=False)
-
-    @field_validator("permission_scopes")
-    @classmethod
-    def permission_scopes_are_valid(cls, values: frozenset[str]) -> frozenset[str]:
-        if any(not value.strip() for value in values):
-            raise ValueError("permission scopes must be non-empty")
-        return values
 
     @field_validator("executor")
     @classmethod

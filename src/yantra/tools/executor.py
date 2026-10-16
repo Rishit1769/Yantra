@@ -10,6 +10,7 @@ from pydantic import JsonValue, TypeAdapter
 from yantra.core.errors import ToolNotFoundError, ToolValidationError
 from yantra.core.messages import ToolCall, ToolResult
 from yantra.tools.base import ExecutionMode, ToolDefinition
+from yantra.tools.policy import PolicyDecision, PolicyEffect
 from yantra.tools.registry import ToolRegistry
 
 _JSON_VALUE = TypeAdapter(JsonValue)
@@ -25,11 +26,40 @@ class ToolExecutor:
     def __init__(self, registry: ToolRegistry) -> None:
         self.registry = registry
 
-    async def execute(self, call: ToolCall, *, timeout_seconds: float | None = None) -> ToolResult:
+    async def execute(
+        self,
+        call: ToolCall,
+        *,
+        authorization: PolicyDecision | None = None,
+        expected_definition: ToolDefinition | None = None,
+        timeout_seconds: float | None = None,
+    ) -> ToolResult:
         try:
             definition = self.registry.get(call.name)
         except ToolNotFoundError:
             return self._failure(call, "tool_not_found", f"tool {call.name!r} is not registered")
+
+        if expected_definition is not None and definition is not expected_definition:
+            return self._failure(
+                call, "tool_not_permitted", "tool configuration changed during authorization"
+            )
+
+        if not isinstance(authorization, PolicyDecision):
+            return self._failure(call, "tool_not_permitted", "tool is not authorized for this run")
+        if authorization.effect != PolicyEffect.ALLOW:
+            if authorization.effect == PolicyEffect.APPROVAL_REQUIRED:
+                return self._policy_failure(
+                    call,
+                    "tool_approval_required",
+                    "tool execution requires approval, which is unavailable",
+                    authorization,
+                )
+            return self._policy_failure(
+                call,
+                "tool_not_permitted",
+                "tool is not authorized for this run",
+                authorization,
+            )
 
         try:
             arguments = definition.validate_input(call.arguments)
@@ -78,5 +108,16 @@ class ToolExecutor:
             call_id=call.call_id,
             name=call.name,
             result={"error_code": code, "message": message},
+            is_error=True,
+        )
+
+    @staticmethod
+    def _policy_failure(
+        call: ToolCall, code: str, message: str, decision: PolicyDecision
+    ) -> ToolResult:
+        return ToolResult(
+            call_id=call.call_id,
+            name=call.name,
+            result={"error_code": code, "message": message, "policy_reason": decision.reason},
             is_error=True,
         )

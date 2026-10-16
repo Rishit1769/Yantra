@@ -6,11 +6,12 @@ from decimal import Decimal
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
 from yantra.core.contracts import TokenUsage
 from yantra.core.messages import Message, ToolResult
 from yantra.core.states import RunState
+from yantra.tools.policy import PolicyContext
 
 
 class AgentTerminationReason(StrEnum):
@@ -38,6 +39,8 @@ class AgentRunConfig(BaseModel):
     token_budget: int | None = Field(default=None, gt=0)
     cost_budget_usd: Decimal | None = Field(default=None, gt=0)
     tool_names: tuple[str, ...] = ()
+    permission_context: PolicyContext | None = None
+    allow_legacy_unscoped_tools: StrictBool = True
     run_id: UUID = Field(default_factory=uuid4)
     session_id: UUID = Field(default_factory=uuid4)
 

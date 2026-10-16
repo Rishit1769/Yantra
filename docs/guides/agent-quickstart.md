@@ -38,8 +38,11 @@ optional output model, sync/async execution mode, and side-effect category.
 may be advertised and executed during that run. The default empty tuple
 authorizes none; registration alone is not permission. Execution checks the
 allowlist again even if a model proposes a tool that was not advertised.
-Unknown names are ineffective and do not widen access. `permission_scopes` is
-metadata only and is not evaluated by this runtime.
+Unknown names are ineffective and do not widen access. With a per-run
+`PolicyContext`, `permission_scopes` are enforced as exact-match requirements
+in addition to the name allowlist. See the [secure tool runtime guide](../security/secure-tool-runtime.md)
+for explicit grants, denial behavior, legacy unscoped-tool compatibility, and
+the offline allow/deny example in `examples/secure_tool_policy.py`.
 
 ```python
 from pydantic import BaseModel
@@ -72,7 +75,10 @@ tools.register(
 
 The example contains the complete gateway/provider setup and runnable loop.
 `AgentRunConfig` accepts the selected `provider/model`, initial typed messages,
-step/tool/time limits, optional token/cost budgets, and the tool allowlist.
+step/tool/time limits, optional token/cost budgets, the tool allowlist, and an
+optional `permission_context`. The compatibility flag
+`allow_legacy_unscoped_tools` defaults to `True` for already name-allowlisted
+unscoped tools; set it to `False` to reject those tools.
 Always inject the gateway and registry explicitly; the runtime does not load
 credentials or create global registries on its own.
 
@@ -129,7 +135,9 @@ wall-clock deadlines, cooperative cancellation, normalized gateway failures,
 partial-progress results, and sanitized traces. Configured token/cost budgets
 fail closed when the required accounting information is unavailable.
 
-The runtime does not provide authorization policy, persistence, durable
+The runtime now provides the focused logical tool policy described above, but
+not a general-purpose policy language, approval workflow, or OS sandbox. It
+also does not provide persistence, durable
 recovery, exactly-once side effects, shell/filesystem/browser/network tools,
 MCP, multi-agent execution, or production guarantees. Provider tool support
 depends on the selected model and is not established by this offline example.
