@@ -93,3 +93,72 @@ def test_runtime_diagnostics_redact_untrusted_trace_labels() -> None:
     assert "[REDACTED]" in output
     assert "\nforged" not in output
     assert "private-canary" not in output
+
+
+def test_runtime_diagnostics_show_only_allowlisted_tool_error_categories() -> None:
+    import asyncio
+
+    result, _ = asyncio.run(load_demo()())
+    payload = result.model_dump()
+    payload["tool_results"] = (
+        {
+            "call_id": "bad-args",
+            "name": "calculator.add",
+            "result": {
+                "error_code": "invalid_arguments",
+                "message": "api_key=synthetic-error-secret",
+                "arguments": {"private": "synthetic-argument-secret"},
+            },
+            "is_error": True,
+        },
+        *(
+            {
+                "call_id": code,
+                "name": "calculator.add",
+                "result": {"error_code": code, "message": "private exception text"},
+                "is_error": True,
+            }
+            for code in ("tool_not_found", "tool_timeout", "invalid_output", "tool_exception")
+        ),
+        {
+            "call_id": "missing-category",
+            "name": "calculator.add",
+            "result": {"message": "secret should not be displayed"},
+            "is_error": True,
+        },
+        {
+            "call_id": "malformed-payload",
+            "name": "calculator.add",
+            "result": "untrusted raw error payload",
+            "is_error": True,
+        },
+        {
+            "call_id": "successful",
+            "name": "calculator.add",
+            "result": {"total": 20},
+            "is_error": False,
+        },
+        {
+            "call_id": "malformed",
+            "name": "calculator.add",
+            "result": {"error_code": "attacker-controlled-category"},
+            "is_error": True,
+        },
+    )
+    output = format_run_result(AgentRunResult.model_validate(payload))
+
+    assert "error (invalid_arguments)" in output
+    assert "error (tool_not_found)" in output
+    assert "error (tool_timeout)" in output
+    assert "error (invalid_output)" in output
+    assert "error (tool_exception)" in output
+    assert "successful]: success" in output
+    assert "missing-category]: error" in output
+    assert "malformed-payload]: error" in output
+    assert "attacker-controlled-category" not in output
+    assert "synthetic-error-secret" not in output
+    assert "synthetic-argument-secret" not in output
+    assert "private exception text" not in output
+    assert "secret should not be displayed" not in output
+    assert "untrusted raw error payload" not in output
+    assert "12 + 8 = 20" not in output

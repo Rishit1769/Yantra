@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import cast
 
 from yantra.runtime.models import AgentRunResult
 
@@ -11,6 +12,16 @@ _SECRET_ASSIGNMENT = re.compile(
     r"([^\s,;]+)"
 )
 _BEARER = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+")
+_TOOL_ERROR_CODES = frozenset(
+    {
+        "tool_not_permitted",
+        "tool_not_found",
+        "invalid_arguments",
+        "tool_timeout",
+        "invalid_output",
+        "tool_exception",
+    }
+)
 
 
 def _safe_label(value: str) -> str:
@@ -31,7 +42,11 @@ def format_run_result(result: AgentRunResult) -> str:
         lines.append("Tools:")
         for item in result.tool_results:
             status = "error" if item.is_error else "success"
-            lines.append(f"- {_safe_label(item.name)} [{_safe_label(item.call_id)}]: {status}")
+            category = _tool_error_category(item.result) if item.is_error else None
+            suffix = f" ({category})" if category else ""
+            lines.append(
+                f"- {_safe_label(item.name)} [{_safe_label(item.call_id)}]: {status}{suffix}"
+            )
     if result.usage_complete and result.usage is not None:
         lines.append(
             "Token usage: "
@@ -59,3 +74,10 @@ def format_run_result(result: AgentRunResult) -> str:
             details.append(f"error={_safe_label(entry.error_code)}")
         lines.append(f"{entry.sequence}. " + " | ".join(details))
     return "\n".join(lines)
+
+
+def _tool_error_category(payload: object) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    category = cast(dict[str, object], payload).get("error_code")
+    return category if isinstance(category, str) and category in _TOOL_ERROR_CODES else None
