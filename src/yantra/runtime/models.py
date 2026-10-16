@@ -6,7 +6,7 @@ from decimal import Decimal
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from yantra.core.contracts import TokenUsage
 from yantra.core.messages import Message, ToolResult
@@ -40,6 +40,13 @@ class AgentRunConfig(BaseModel):
     tool_names: tuple[str, ...] = ()
     run_id: UUID = Field(default_factory=uuid4)
     session_id: UUID = Field(default_factory=uuid4)
+
+    @field_validator("tool_names")
+    @classmethod
+    def tool_names_are_unique(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        if len(values) != len(set(values)):
+            raise ValueError("tool_names must be unique")
+        return values
 
 
 class AgentStep(BaseModel):

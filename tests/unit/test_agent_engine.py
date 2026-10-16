@@ -6,9 +6,15 @@ import pytest
 from pydantic import BaseModel, Field
 
 from yantra.core.contracts import ProviderCapabilities, TokenUsage
-from yantra.core.errors import ProviderError
+from yantra.core.errors import (
+    ProviderAuthenticationError,
+    ProviderError,
+    ProviderRateLimitError,
+    ProviderTimeoutError,
+)
 from yantra.core.messages import Message, MessageRole, TextContent, ToolCall
 from yantra.core.states import RunState
+from yantra.providers.adapters.common import chat_request_messages
 from yantra.providers.base import FinishReason, ModelRequest, ModelResponse
 from yantra.providers.gateway import ModelGateway
 from yantra.providers.registry import ProviderRegistry
@@ -46,9 +52,28 @@ class SequenceProvider:
 
 
 class SlowProvider(SequenceProvider):
+    def __init__(
+        self, factories: Sequence[Callable[[ModelRequest], ModelResponse | Exception]]
+    ) -> None:
+        super().__init__(factories)
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+        self.cancelled = asyncio.Event()
+
     async def complete(self, request: ModelRequest) -> ModelResponse:
-        await asyncio.sleep(1)
-        return await super().complete(request)
+        self.requests.append(request)
+        self.started.set()
+        try:
+            await self.release.wait()
+        except asyncio.CancelledError:
+            self.cancelled.set()
+            raise
+        outcome = self.factories.pop(0)
+        if callable(outcome):
+            outcome = outcome(request)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
 
 
 def text_response(
@@ -165,6 +190,79 @@ async def test_tool_result_is_ordered_and_returned_to_model() -> None:
         "call-1",
         "call-2",
     ]
+    round_tripped = [
+        Message.model_validate_json(message.model_dump_json()) for message in tool_messages
+    ]
+    assert [message.tool_result.name for message in round_tripped if message.tool_result] == [
+        "demo.echo",
+        "demo.echo",
+    ]
+    protocol_messages = chat_request_messages(provider.requests[1].messages, provider_id="test")
+    assert protocol_messages[1]["tool_calls"][0]["id"] == "call-1"
+    assert protocol_messages[2]["tool_call_id"] == "call-1"
+    assert protocol_messages[3]["tool_call_id"] == "call-2"
+
+
+@pytest.mark.asyncio
+async def test_multi_turn_workflow_preserves_history_and_allows_repeated_tool_name() -> None:
+    registry = echo_registry()
+    usage = TokenUsage(input_tokens=1, output_tokens=1, total_tokens=2)
+    provider = SequenceProvider(
+        [
+            lambda request: tool_response(
+                request,
+                (ToolCall(call_id="repeat-1", name="demo.echo", arguments={"text": "first"}),),
+                usage,
+            ),
+            lambda request: tool_response(
+                request,
+                (ToolCall(call_id="repeat-2", name="demo.echo", arguments={"text": "second"}),),
+                usage,
+            ),
+            lambda request: text_response(request, "combined", usage),
+        ]
+    )
+    result = await engine_for(provider, registry).run(
+        AgentRunConfig(model="test/model", messages=(user_message("task"),), max_steps=3)
+    )
+
+    assert result.output == "combined"
+    assert result.state == RunState.COMPLETED
+    assert [step.index for step in result.steps] == [1, 2, 3]
+    assert [item.call_id for item in result.tool_results] == ["repeat-1", "repeat-2"]
+    assert result.usage is not None and result.usage.total_tokens == 6
+    history = provider.requests[-1].messages
+    assert [message.role for message in history] == [
+        MessageRole.USER,
+        MessageRole.ASSISTANT,
+        MessageRole.TOOL,
+        MessageRole.ASSISTANT,
+        MessageRole.TOOL,
+    ]
+    assert provider.requests[-1].model_id == "model"
+
+
+@pytest.mark.asyncio
+async def test_tool_name_allowlist_blocks_registered_but_disabled_tool() -> None:
+    provider = SequenceProvider(
+        [
+            lambda request: tool_response(
+                request,
+                (ToolCall(call_id="not-allowed", name="demo.echo", arguments={"text": "x"}),),
+            ),
+            lambda request: text_response(request, "observed failure"),
+        ]
+    )
+    result = await engine_for(provider, echo_registry()).run(
+        AgentRunConfig(
+            model="test/model",
+            messages=(user_message(),),
+            tool_names=("demo.other",),
+        )
+    )
+
+    assert result.tool_results[0].is_error
+    assert result.tool_results[0].result["error_code"] == "tool_not_permitted"
 
 
 @pytest.mark.asyncio
@@ -201,8 +299,11 @@ async def test_tool_exception_and_timeout_are_structured_observations() -> None:
     async def broken(_: Input) -> dict[str, str]:
         raise RuntimeError("secret should not be exposed")
 
+    slow_started = asyncio.Event()
+
     async def slow(_: Input) -> dict[str, str]:
-        await asyncio.sleep(1)
+        slow_started.set()
+        await asyncio.Event().wait()
         return {"value": "done"}
 
     registry = ToolRegistry()
@@ -245,6 +346,7 @@ async def test_tool_exception_and_timeout_are_structured_observations() -> None:
         "tool_timeout",
     ]
     assert "secret" not in str(result.model_dump())
+    assert slow_started.is_set()
 
 
 @pytest.mark.asyncio
@@ -265,12 +367,72 @@ async def test_max_steps_prevents_repeated_tool_loop() -> None:
 
 
 @pytest.mark.asyncio
+async def test_final_response_at_step_boundary_completes() -> None:
+    provider = SequenceProvider(
+        [
+            lambda request: tool_response(
+                request,
+                (ToolCall(call_id="boundary-tool", name="demo.echo", arguments={"text": "x"}),),
+            ),
+            lambda request: text_response(request, "boundary complete"),
+        ]
+    )
+    result = await engine_for(provider, echo_registry()).run(
+        AgentRunConfig(model="test/model", messages=(user_message(),), max_steps=2)
+    )
+    assert result.state == RunState.COMPLETED
+    assert result.output == "boundary complete"
+    assert len(provider.requests) == 2
+
+
+@pytest.mark.asyncio
+async def test_tool_call_batch_over_budget_is_rejected_without_partial_execution() -> None:
+    provider = SequenceProvider(
+        [
+            lambda request: tool_response(
+                request,
+                (
+                    ToolCall(call_id="batch-1", name="demo.echo", arguments={"text": "one"}),
+                    ToolCall(call_id="batch-2", name="demo.echo", arguments={"text": "two"}),
+                ),
+            )
+        ]
+    )
+    result = await engine_for(provider, echo_registry()).run(
+        AgentRunConfig(model="test/model", messages=(user_message(),), max_tool_calls=1)
+    )
+    assert result.termination_reason == AgentTerminationReason.TOOL_FAILURE
+    assert result.error_code == "tool_budget_exhausted"
+    assert result.tool_results == ()
+
+
+@pytest.mark.asyncio
+async def test_zero_tool_budget_executes_no_proposals() -> None:
+    provider = SequenceProvider(
+        [
+            lambda request: tool_response(
+                request,
+                (ToolCall(call_id="zero-1", name="demo.echo", arguments={"text": "x"}),),
+            )
+        ]
+    )
+    result = await engine_for(provider, echo_registry()).run(
+        AgentRunConfig(model="test/model", messages=(user_message(),), max_tool_calls=0)
+    )
+    assert result.termination_reason == AgentTerminationReason.TOOL_FAILURE
+    assert result.tool_results == ()
+
+
+@pytest.mark.asyncio
 async def test_explicit_cancellation_cancels_in_flight_async_tool() -> None:
     class Input(BaseModel):
         value: str
 
+    started = asyncio.Event()
+
     async def slow(_: Input) -> dict[str, str]:
-        await asyncio.sleep(10)
+        started.set()
+        await asyncio.Event().wait()
         return {"value": "done"}
 
     registry = ToolRegistry()
@@ -296,7 +458,7 @@ async def test_explicit_cancellation_cancels_in_flight_async_tool() -> None:
             AgentRunConfig(model="test/model", messages=(user_message(),)), cancellation=token
         )
     )
-    await asyncio.sleep(0.02)
+    await asyncio.wait_for(started.wait(), timeout=1)
     token.cancel()
     result = await task
 
@@ -327,6 +489,161 @@ async def test_provider_failure_is_structured_and_external_cancellation_propagat
 
 
 @pytest.mark.asyncio
+async def test_explicit_cancellation_during_gateway_cleans_up_provider_task() -> None:
+    provider = SlowProvider([lambda request: text_response(request, "late")])
+    token = CancellationToken()
+    task = asyncio.create_task(
+        engine_for(provider).run(
+            AgentRunConfig(model="test/model", messages=(user_message(),)), cancellation=token
+        )
+    )
+    await asyncio.wait_for(provider.started.wait(), timeout=1)
+    token.cancel()
+    result = await task
+
+    assert result.state == RunState.CANCELLED
+    assert provider.cancelled.is_set()
+    assert len(provider.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_cancellation_after_terminal_run_does_not_change_result() -> None:
+    provider = SequenceProvider([lambda request: text_response(request, "already done")])
+    token = CancellationToken()
+    result = await engine_for(provider).run(
+        AgentRunConfig(model="test/model", messages=(user_message(),)), cancellation=token
+    )
+    token.cancel()
+
+    assert result.state == RunState.COMPLETED
+    assert result.output == "already done"
+    assert len(provider.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_total_deadline_cancels_async_tool_and_preserves_observation_history() -> None:
+    class Input(BaseModel):
+        value: str
+
+    started = asyncio.Event()
+    stopped = asyncio.Event()
+
+    async def hanging(_: Input) -> dict[str, str]:
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            stopped.set()
+
+    registry = ToolRegistry()
+    registry.register(
+        ToolDefinition(
+            name="demo.hang",
+            input_model=Input,
+            executor=hanging,
+            execution_mode=ExecutionMode.ASYNC,
+        )
+    )
+    provider = SequenceProvider(
+        [
+            lambda request: tool_response(
+                request,
+                (ToolCall(call_id="deadline-tool", name="demo.hang", arguments={"value": "x"}),),
+            )
+        ]
+    )
+    result = await engine_for(provider, registry).run(
+        AgentRunConfig(model="test/model", messages=(user_message(),), timeout_seconds=0.05)
+    )
+
+    assert result.termination_reason == AgentTerminationReason.TIMEOUT
+    assert started.is_set() and stopped.is_set()
+    assert result.tool_results == ()
+    assert len(provider.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_cancellation_between_tool_proposals_prevents_next_handler() -> None:
+    class Input(BaseModel):
+        value: str
+
+    token = CancellationToken()
+    calls: list[str] = []
+
+    async def run_tool(arguments: Input) -> dict[str, str]:
+        calls.append(arguments.value)
+        if arguments.value == "first":
+            token.cancel()
+        return {"value": arguments.value}
+
+    registry = ToolRegistry()
+    registry.register(
+        ToolDefinition(
+            name="demo.track",
+            input_model=Input,
+            executor=run_tool,
+            execution_mode=ExecutionMode.ASYNC,
+        )
+    )
+    provider = SequenceProvider(
+        [
+            lambda request: tool_response(
+                request,
+                (
+                    ToolCall(call_id="first-id", name="demo.track", arguments={"value": "first"}),
+                    ToolCall(call_id="second-id", name="demo.track", arguments={"value": "second"}),
+                ),
+            )
+        ]
+    )
+    result = await engine_for(provider, registry).run(
+        AgentRunConfig(model="test/model", messages=(user_message(),)), cancellation=token
+    )
+
+    assert result.state == RunState.CANCELLED
+    assert calls == ["first"]
+    assert [item.call_id for item in result.tool_results] == ["first-id"]
+
+
+@pytest.mark.asyncio
+async def test_gateway_timeout_error_is_not_retried_by_agent_loop() -> None:
+    provider = SequenceProvider(
+        [lambda request: ProviderTimeoutError("upstream timed out", provider_id="test")]
+    )
+    result = await engine_for(provider).run(
+        AgentRunConfig(model="test/model", messages=(user_message(),))
+    )
+    assert result.termination_reason == AgentTerminationReason.PROVIDER_FAILURE
+    assert result.error_code == "provider_timeout"
+    assert len(provider.requests) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("failure", "expected_code"),
+    [
+        (
+            ProviderAuthenticationError("credential rejected", provider_id="test"),
+            "provider_authentication_error",
+        ),
+        (ProviderRateLimitError("rate limited", provider_id="test"), "provider_rate_limited"),
+    ],
+)
+async def test_normalized_provider_failures_are_terminal_and_traced(
+    failure: ProviderError, expected_code: str
+) -> None:
+    provider = SequenceProvider([failure])
+    result = await engine_for(provider).run(
+        AgentRunConfig(model="test/model", messages=(user_message(),))
+    )
+    assert result.termination_reason == AgentTerminationReason.PROVIDER_FAILURE
+    assert result.error_code == expected_code
+    assert result.trace[-1].event == "provider_failure"
+    assert result.trace[-1].error_code == expected_code
+    assert len(provider.requests) == 1
+
+
+@pytest.mark.asyncio
 async def test_wall_clock_timeout_covers_model_request() -> None:
     provider = SlowProvider([lambda request: text_response(request, "late")])
     result = await engine_for(provider).run(
@@ -334,6 +651,53 @@ async def test_wall_clock_timeout_covers_model_request() -> None:
     )
     assert result.state == RunState.FAILED
     assert result.termination_reason == AgentTerminationReason.TIMEOUT
+    assert provider.started.is_set()
+    assert result.trace[-1].event == "run_timeout"
+
+
+@pytest.mark.asyncio
+async def test_timeout_after_tool_cycle_retains_completed_steps_and_observations() -> None:
+    registry = echo_registry()
+    # Let the first call return immediately and block only on the second.
+    second_waiting = asyncio.Event()
+
+    class OneFastThenBlocked(SequenceProvider):
+        async def complete(self, request: ModelRequest) -> ModelResponse:
+            if self.requests:
+                second_waiting.set()
+                await asyncio.Event().wait()
+            return await super().complete(request)
+
+    staged = OneFastThenBlocked(
+        [
+            lambda request: tool_response(
+                request,
+                (ToolCall(call_id="done-1", name="demo.echo", arguments={"text": "saved"}),),
+            ),
+            lambda request: text_response(request, "never returned"),
+        ]
+    )
+    result = await engine_for(staged, registry).run(
+        AgentRunConfig(model="test/model", messages=(user_message(),), timeout_seconds=0.05)
+    )
+
+    assert result.termination_reason == AgentTerminationReason.TIMEOUT
+    assert len(result.steps) == 1
+    assert [item.call_id for item in result.tool_results] == ["done-1"]
+    assert second_waiting.is_set()
+
+
+@pytest.mark.asyncio
+async def test_external_cancellation_cleans_up_gateway_task() -> None:
+    provider = SlowProvider([lambda request: text_response(request, "late")])
+    task = asyncio.create_task(
+        engine_for(provider).run(AgentRunConfig(model="test/model", messages=(user_message(),)))
+    )
+    await asyncio.wait_for(provider.started.wait(), timeout=1)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert provider.cancelled.is_set()
 
 
 @pytest.mark.asyncio
@@ -341,6 +705,31 @@ async def test_missing_usage_is_reported_without_fabrication() -> None:
     provider = SequenceProvider([lambda request: text_response(request, "done")])
     result = await engine_for(provider).run(
         AgentRunConfig(model="test/model", messages=(user_message(),), token_budget=1)
+    )
+    assert result.output is None
+    assert result.termination_reason == AgentTerminationReason.TOKEN_BUDGET
+    assert result.error_code == "token_budget_unverifiable"
+    assert result.usage is None
+    assert not result.usage_complete
+
+
+@pytest.mark.asyncio
+async def test_missing_usage_on_intermediate_call_keeps_aggregate_unknown() -> None:
+    provider = SequenceProvider(
+        [
+            lambda request: tool_response(
+                request,
+                (ToolCall(call_id="usage-1", name="demo.echo", arguments={"text": "x"}),),
+            ),
+            lambda request: text_response(
+                request,
+                "done",
+                TokenUsage(input_tokens=5, output_tokens=1, total_tokens=6),
+            ),
+        ]
+    )
+    result = await engine_for(provider, echo_registry()).run(
+        AgentRunConfig(model="test/model", messages=(user_message(),))
     )
     assert result.output == "done"
     assert result.usage is None
@@ -397,6 +786,77 @@ async def test_token_budget_stops_before_more_tool_execution() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cost_budget_fails_closed_when_gateway_cost_is_unknown() -> None:
+    provider = SequenceProvider([lambda request: text_response(request, "done")])
+    result = await engine_for(provider).run(
+        AgentRunConfig(
+            model="test/model",
+            messages=(user_message(),),
+            cost_budget_usd=Decimal("1.00"),
+        )
+    )
+    assert result.termination_reason == AgentTerminationReason.COST_BUDGET
+    assert result.error_code == "cost_budget_unverifiable"
+    assert result.total_cost_usd is None
+    assert not result.cost_budget_enforced
+
+
+@pytest.mark.asyncio
+async def test_unexpected_provider_exception_is_sanitized_and_structured() -> None:
+    provider = SequenceProvider([lambda request: RuntimeError("api_key=synthetic-secret")])
+    result = await engine_for(provider).run(
+        AgentRunConfig(model="test/model", messages=(user_message(),))
+    )
+    assert result.termination_reason == AgentTerminationReason.PROVIDER_FAILURE
+    assert result.error_code == "provider_error"
+    assert "synthetic-secret" not in str(result.model_dump())
+    assert result.trace[-1].error_code == "provider_error"
+
+
+@pytest.mark.asyncio
+async def test_malformed_assistant_response_fails_with_terminal_trace() -> None:
+    provider = SequenceProvider(
+        [
+            lambda request: ModelResponse(
+                request_id=request.request_id,
+                provider_id="test",
+                model_id=request.model_id,
+                message=Message(role=MessageRole.USER, content=(TextContent(text="bad role"),)),
+                finish_reason=FinishReason.STOP,
+            )
+        ]
+    )
+    result = await engine_for(provider).run(
+        AgentRunConfig(model="test/model", messages=(user_message(),))
+    )
+    assert result.termination_reason == AgentTerminationReason.INVALID_RESPONSE
+    assert result.trace[-1].event == "invalid_response"
+    assert result.trace[-1].state == RunState.FAILED
+    assert result.trace[-1].error_code == "invalid_response"
+
+
+@pytest.mark.asyncio
+async def test_provider_failure_after_tool_cycle_preserves_prior_progress() -> None:
+    provider = SequenceProvider(
+        [
+            lambda request: tool_response(
+                request,
+                (ToolCall(call_id="completed-1", name="demo.echo", arguments={"text": "x"}),),
+            ),
+            ProviderError("authentication failed: api_key=synthetic-secret", provider_id="test"),
+        ]
+    )
+    result = await engine_for(provider, echo_registry()).run(
+        AgentRunConfig(model="test/model", messages=(user_message(),))
+    )
+    assert result.termination_reason == AgentTerminationReason.PROVIDER_FAILURE
+    assert len(result.steps) == 1
+    assert [item.call_id for item in result.tool_results] == ["completed-1"]
+    assert result.error_message is not None and "synthetic-secret" not in result.error_message
+    assert result.trace[-1].state == RunState.FAILED
+
+
+@pytest.mark.asyncio
 async def test_duplicate_call_ids_are_not_executed() -> None:
     provider = SequenceProvider(
         [
@@ -415,3 +875,75 @@ async def test_duplicate_call_ids_are_not_executed() -> None:
     assert result.termination_reason == AgentTerminationReason.INVALID_RESPONSE
     assert result.tool_results == ()
     assert all(entry.call_id is None for entry in result.trace)
+
+
+@pytest.mark.asyncio
+async def test_same_tool_name_can_repeat_with_distinct_call_ids() -> None:
+    provider = SequenceProvider(
+        [
+            lambda request: tool_response(
+                request,
+                (ToolCall(call_id="new-id-1", name="demo.echo", arguments={"text": "x"}),),
+            ),
+            lambda request: tool_response(
+                request,
+                (ToolCall(call_id="new-id-2", name="demo.echo", arguments={"text": "x"}),),
+            ),
+            lambda request: text_response(request, "done"),
+        ]
+    )
+    result = await engine_for(provider, echo_registry()).run(
+        AgentRunConfig(model="test/model", messages=(user_message(),), max_steps=3)
+    )
+    assert result.output == "done"
+    assert [item.call_id for item in result.tool_results] == ["new-id-1", "new-id-2"]
+
+
+@pytest.mark.asyncio
+async def test_concurrent_runs_keep_histories_usage_and_traces_isolated() -> None:
+    def response_for_task(request: ModelRequest) -> ModelResponse:
+        task_text = request.messages[0].content[0].text
+        return text_response(
+            request,
+            f"answer:{task_text}",
+            TokenUsage(input_tokens=1, output_tokens=1, total_tokens=2),
+        )
+
+    provider = SequenceProvider([response_for_task, response_for_task])
+    engine = engine_for(provider)
+    config_a = AgentRunConfig(model="test/model", messages=(user_message("A"),))
+    config_b = AgentRunConfig(model="test/model", messages=(user_message("B"),))
+    result_a, result_b = await asyncio.gather(engine.run(config_a), engine.run(config_b))
+
+    assert result_a.output == "answer:A"
+    assert result_b.output == "answer:B"
+    assert result_a.run_id != result_b.run_id
+    assert result_a.trace is not result_b.trace
+    assert result_a.usage is not None and result_a.usage.total_tokens == 2
+    assert result_b.usage is not None and result_b.usage.total_tokens == 2
+
+
+@pytest.mark.asyncio
+async def test_trace_order_and_reasoning_redaction() -> None:
+    request_message = Message(
+        role=MessageRole.ASSISTANT,
+        content=(TextContent(text="visible"),),
+        provider_extensions={"test.provider": {"reasoning_content": "private-reasoning"}},
+    )
+    provider = SequenceProvider(
+        [
+            lambda request: ModelResponse(
+                request_id=request.request_id,
+                provider_id="test",
+                model_id=request.model_id,
+                message=request_message,
+                finish_reason=FinishReason.STOP,
+            )
+        ]
+    )
+    result = await engine_for(provider).run(
+        AgentRunConfig(model="test/model", messages=(user_message(),))
+    )
+    assert [entry.sequence for entry in result.trace] == list(range(1, len(result.trace) + 1))
+    assert result.trace[-1].state == RunState.COMPLETED
+    assert "private-reasoning" not in str(result.trace)

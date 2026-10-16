@@ -99,8 +99,13 @@ steps, tool observations, known usage/cost, and sanitized trace entries.
 `CancellationToken` provides explicit cooperative cancellation. External task
 cancellation propagates as normal `asyncio.CancelledError`. Tool failures are
 structured observations; duplicate call IDs and malformed empty responses fail
-the run. The engine does not add shell, filesystem, browser, MCP, persistence,
-or authorization-policy capabilities. See [agent execution engine](../architecture/agent-execution-engine.md).
+the run. Tool proposals are processed sequentially, non-empty tool allowlists
+are enforced at execution, and over-budget batches are rejected atomically.
+Configured token/cost budgets fail closed if the required usage/cost data is
+unavailable. Gateway and tool timeouts preserve completed progress. Sync tool
+work uses a worker thread and cannot be forcibly stopped by asyncio
+cancellation. The engine does not add shell, filesystem, browser, MCP,
+persistence, or authorization-policy capabilities. See [agent execution engine](../architecture/agent-execution-engine.md).
 
 ## Limitations
 

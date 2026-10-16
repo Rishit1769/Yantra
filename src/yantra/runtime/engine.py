@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Sequence
-from contextlib import suppress
+from collections.abc import Awaitable, Callable, Sequence
 from decimal import Decimal
 from typing import TypeVar
 
@@ -12,7 +11,7 @@ from yantra.core.contracts import TokenUsage
 from yantra.core.errors import ProviderError, YantraError
 from yantra.core.messages import Message, MessageRole, ToolResult
 from yantra.core.states import RunState, validate_transition
-from yantra.providers.gateway import ModelGateway
+from yantra.providers.gateway import GatewayResponse, ModelGateway
 from yantra.runtime.models import (
     AgentRunConfig,
     AgentRunResult,
@@ -57,22 +56,7 @@ class AgentExecutionEngine:
     async def run(
         self, config: AgentRunConfig, *, cancellation: CancellationToken | None = None
     ) -> AgentRunResult:
-        try:
-            return await asyncio.wait_for(
-                self._run(config, cancellation), timeout=config.timeout_seconds
-            )
-        except TimeoutError:
-            return AgentRunResult(
-                run_id=config.run_id,
-                session_id=config.session_id,
-                state=RunState.FAILED,
-                termination_reason=AgentTerminationReason.TIMEOUT,
-                error_code="run_timeout",
-                error_message="agent run exceeded its wall-clock timeout",
-            )
-        except asyncio.CancelledError:
-            # External task cancellation remains normal asyncio cancellation.
-            raise
+        return await self._run(config, cancellation)
 
     async def _run(
         self, config: AgentRunConfig, cancellation: CancellationToken | None
@@ -88,8 +72,9 @@ class AgentExecutionEngine:
         total_cost: Decimal | None = Decimal("0")
         cost_known = True
         tool_count = 0
+        deadline = asyncio.get_running_loop().time() + config.timeout_seconds
 
-        def set_state(target: RunState, *, event: str) -> None:
+        def set_state(target: RunState, *, event: str, error_code: str | None = None) -> None:
             nonlocal state
             validate_transition(state, target)
             state = target
@@ -99,6 +84,7 @@ class AgentExecutionEngine:
                     step_index=len(steps),
                     event=event,
                     state=state,
+                    error_code=error_code,
                 )
             )
 
@@ -125,9 +111,9 @@ class AgentExecutionEngine:
                 )
             )
 
-        def terminal(target: RunState, event: str) -> RunState:
+        def terminal(target: RunState, event: str, *, error_code: str | None = None) -> RunState:
             if state != target:
-                set_state(target, event=event)
+                set_state(target, event=event, error_code=error_code)
             return target
 
         set_state(RunState.QUEUED, event="run_queued")
@@ -140,7 +126,11 @@ class AgentExecutionEngine:
                     if total_usage.total_tokens >= config.token_budget:
                         return self._result(
                             config,
-                            terminal(RunState.FAILED, "token_budget_exhausted"),
+                            terminal(
+                                RunState.FAILED,
+                                "token_budget_exhausted",
+                                error_code="token_budget_exhausted",
+                            ),
                             AgentTerminationReason.TOKEN_BUDGET,
                             steps,
                             tool_results,
@@ -153,14 +143,19 @@ class AgentExecutionEngine:
                             "token budget exhausted",
                         )
                 set_state(RunState.WAITING_FOR_MODEL, event="model_waiting")
-                gateway_result = await self._await(
-                    self.gateway.generate(
+
+                async def request_model() -> GatewayResponse:
+                    return await self.gateway.generate(
                         model=config.model,
                         messages=messages,
                         tools=self._schemas(config),
                         timeout_seconds=config.timeout_seconds,
-                    ),
+                    )
+
+                gateway_result = await self._await(
+                    request_model,
                     cancellation,
+                    deadline=deadline,
                 )
                 set_state(RunState.RUNNING, event="model_received")
                 response = gateway_result.response
@@ -194,6 +189,44 @@ class AgentExecutionEngine:
                     outcome="tool_calls" if response.message.tool_calls else "text",
                     usage=response.usage,
                 )
+                if config.token_budget is not None and not usage_complete:
+                    return self._result(
+                        config,
+                        terminal(
+                            RunState.FAILED,
+                            "token_budget_unverifiable",
+                            error_code="token_budget_unverifiable",
+                        ),
+                        AgentTerminationReason.TOKEN_BUDGET,
+                        steps,
+                        tool_results,
+                        None,
+                        False,
+                        total_cost if cost_known else None,
+                        False,
+                        trace,
+                        "token_budget_unverifiable",
+                        "token budget cannot be verified because provider usage is missing",
+                    )
+                if config.cost_budget_usd is not None and not cost_known:
+                    return self._result(
+                        config,
+                        terminal(
+                            RunState.FAILED,
+                            "cost_budget_unverifiable",
+                            error_code="cost_budget_unverifiable",
+                        ),
+                        AgentTerminationReason.COST_BUDGET,
+                        steps,
+                        tool_results,
+                        total_usage,
+                        usage_complete,
+                        None,
+                        False,
+                        trace,
+                        "cost_budget_unverifiable",
+                        "cost budget cannot be verified from available gateway cost data",
+                    )
                 if (
                     response.message.tool_calls
                     and config.token_budget is not None
@@ -202,7 +235,11 @@ class AgentExecutionEngine:
                 ):
                     return self._result(
                         config,
-                        terminal(RunState.FAILED, "token_budget_exhausted"),
+                        terminal(
+                            RunState.FAILED,
+                            "token_budget_exhausted",
+                            error_code="token_budget_exhausted",
+                        ),
                         AgentTerminationReason.TOKEN_BUDGET,
                         steps,
                         tool_results,
@@ -214,6 +251,28 @@ class AgentExecutionEngine:
                         "token_budget_exhausted",
                         "token budget exhausted",
                     )
+                current_ids = [call.call_id for call in response.message.tool_calls]
+                if len(current_ids) != len(set(current_ids)) or seen_call_ids.intersection(
+                    current_ids
+                ):
+                    return self._result(
+                        config,
+                        terminal(
+                            RunState.FAILED,
+                            "invalid_response",
+                            error_code="duplicate_tool_call_id",
+                        ),
+                        AgentTerminationReason.INVALID_RESPONSE,
+                        steps,
+                        tool_results,
+                        total_usage,
+                        usage_complete,
+                        total_cost if cost_known else None,
+                        False,
+                        trace,
+                        "duplicate_tool_call_id",
+                        "model response contained a duplicate tool-call identifier",
+                    )
                 if (
                     config.cost_budget_usd is not None
                     and cost_known
@@ -221,7 +280,11 @@ class AgentExecutionEngine:
                 ):
                     return self._result(
                         config,
-                        terminal(RunState.FAILED, "cost_budget_exhausted"),
+                        terminal(
+                            RunState.FAILED,
+                            "cost_budget_exhausted",
+                            error_code="cost_budget_exhausted",
+                        ),
                         AgentTerminationReason.COST_BUDGET,
                         steps,
                         tool_results,
@@ -255,16 +318,15 @@ class AgentExecutionEngine:
                     )
                 if len(steps) >= config.max_steps:
                     break
-                current_ids = [call.call_id for call in response.message.tool_calls]
-                if len(current_ids) != len(set(current_ids)) or seen_call_ids.intersection(
-                    current_ids
-                ):
-                    raise ValueError("duplicate tool-call identifier in model response")
                 seen_call_ids.update(current_ids)
                 if tool_count + len(response.message.tool_calls) > config.max_tool_calls:
                     return self._result(
                         config,
-                        terminal(RunState.FAILED, "tool_budget_exhausted"),
+                        terminal(
+                            RunState.FAILED,
+                            "tool_budget_exhausted",
+                            error_code="tool_budget_exhausted",
+                        ),
                         AgentTerminationReason.TOOL_FAILURE,
                         steps,
                         tool_results,
@@ -278,7 +340,28 @@ class AgentExecutionEngine:
                     )
                 set_state(RunState.WAITING_FOR_TOOL, event="tools_waiting")
                 for call in response.message.tool_calls:
-                    result = await self._await(self.tool_executor.execute(call), cancellation)
+                    if config.tool_names and call.name not in config.tool_names:
+                        result = ToolResult(
+                            call_id=call.call_id,
+                            name=call.name,
+                            result={
+                                "error_code": "tool_not_permitted",
+                                "message": "tool is not enabled for this run",
+                            },
+                            is_error=True,
+                        )
+                    else:
+                        result = await self._await(
+                            lambda current_call=call: self.tool_executor.execute(
+                                current_call,
+                                timeout_seconds=max(
+                                    0.000001,
+                                    deadline - asyncio.get_running_loop().time(),
+                                ),
+                            ),
+                            cancellation,
+                            deadline=deadline,
+                        )
                     tool_results.append(result)
                     tool_count += 1
                     messages.append(Message(role=MessageRole.TOOL, content=(), tool_result=result))
@@ -291,7 +374,7 @@ class AgentExecutionEngine:
                 set_state(RunState.RUNNING, event="tools_completed")
             return self._result(
                 config,
-                terminal(RunState.FAILED, "max_steps"),
+                terminal(RunState.FAILED, "max_steps", error_code="max_steps"),
                 AgentTerminationReason.MAX_STEPS,
                 steps,
                 tool_results,
@@ -320,10 +403,29 @@ class AgentExecutionEngine:
                 "cancelled",
                 "agent run was cancelled",
             )
-        except ProviderError as exc:
+        except TimeoutError:
+            if state not in {RunState.COMPLETED, RunState.FAILED, RunState.CANCELLED}:
+                set_state(RunState.FAILED, event="run_timeout", error_code="run_timeout")
             return self._result(
                 config,
-                terminal(RunState.FAILED, "provider_failure"),
+                RunState.FAILED,
+                AgentTerminationReason.TIMEOUT,
+                steps,
+                tool_results,
+                total_usage,
+                usage_complete,
+                total_cost if cost_known else None,
+                False,
+                trace,
+                "run_timeout",
+                "agent run exceeded its wall-clock timeout",
+            )
+        except ProviderError as exc:
+            if state not in {RunState.COMPLETED, RunState.FAILED, RunState.CANCELLED}:
+                set_state(RunState.FAILED, event="provider_failure", error_code=exc.code)
+            return self._result(
+                config,
+                RunState.FAILED,
                 AgentTerminationReason.PROVIDER_FAILURE,
                 steps,
                 tool_results,
@@ -336,9 +438,12 @@ class AgentExecutionEngine:
                 exc.message,
             )
         except (YantraError, ValueError) as exc:
+            error_code = getattr(exc, "code", "invalid_response")
+            if state not in {RunState.COMPLETED, RunState.FAILED, RunState.CANCELLED}:
+                set_state(RunState.FAILED, event="invalid_response", error_code=error_code)
             return self._result(
                 config,
-                terminal(RunState.FAILED, "invalid_response"),
+                RunState.FAILED,
                 (
                     AgentTerminationReason.INVALID_RESPONSE
                     if isinstance(exc, ValueError)
@@ -351,8 +456,26 @@ class AgentExecutionEngine:
                 total_cost if cost_known else None,
                 False,
                 trace,
-                getattr(exc, "code", "invalid_response"),
+                error_code,
                 str(exc),
+            )
+        except Exception:
+            add_trace("provider_failure", outcome="unexpected_error", error_code="provider_error")
+            if state not in {RunState.COMPLETED, RunState.FAILED, RunState.CANCELLED}:
+                set_state(RunState.FAILED, event="provider_failure", error_code="provider_error")
+            return self._result(
+                config,
+                RunState.FAILED,
+                AgentTerminationReason.PROVIDER_FAILURE,
+                steps,
+                tool_results,
+                total_usage,
+                usage_complete,
+                total_cost if cost_known else None,
+                False,
+                trace,
+                "provider_error",
+                "model gateway execution failed unexpectedly",
             )
 
     def _schemas(self, config: AgentRunConfig):
@@ -362,21 +485,36 @@ class AgentExecutionEngine:
             definitions = tuple(tool for tool in definitions if tool.name in names)
         return tuple(tool.provider_schema() for tool in definitions)
 
-    async def _await(self, operation: Awaitable[_T], cancellation: CancellationToken | None) -> _T:
-        if cancellation is None:
-            return await operation
-        task: asyncio.Task[_T] = asyncio.ensure_future(operation)
-        cancel_task = asyncio.create_task(cancellation.wait())
-        done, _ = await asyncio.wait({task, cancel_task}, return_when=asyncio.FIRST_COMPLETED)
-        if cancel_task in done and not task.done():
-            task.cancel()
-            with suppress(asyncio.CancelledError):
-                await task
+    async def _await(
+        self,
+        operation: Callable[[], Awaitable[_T]],
+        cancellation: CancellationToken | None,
+        *,
+        deadline: float,
+    ) -> _T:
+        if cancellation is not None and cancellation.is_cancelled:
             raise _CancellationRequested
-        cancel_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await cancel_task
-        return await task
+
+        async def within_deadline() -> _T:
+            remaining = deadline - asyncio.get_running_loop().time()
+            async with asyncio.timeout(max(0.0, remaining)):
+                return await operation()
+
+        task: asyncio.Task[_T] = asyncio.create_task(within_deadline())
+        if cancellation is None:
+            return await task
+        cancel_task = asyncio.create_task(cancellation.wait())
+        try:
+            done, _ = await asyncio.wait({task, cancel_task}, return_when=asyncio.FIRST_COMPLETED)
+            if cancel_task in done and not task.done():
+                raise _CancellationRequested
+            return await task
+        finally:
+            owned_tasks = (task, cancel_task)
+            for owned_task in owned_tasks:
+                if not owned_task.done():
+                    owned_task.cancel()
+            await asyncio.gather(*owned_tasks, return_exceptions=True)
 
     @staticmethod
     def _add_usage(current: TokenUsage | None, new: TokenUsage) -> TokenUsage:
