@@ -10,7 +10,7 @@ Package import root is `yantra`; source uses `src/yantra`. Development setup: `u
 
 `yantra.core.agent.AgentConfig` is a frozen Pydantic model containing `agent_id`, `name`, `description`, `system_instructions`, `provider_id`, `model_id`, `tool_references`, `execution_limits`, and JSON-compatible metadata. IDs are restricted to a bounded identifier syntax. Tool references must be non-empty and unique. Agent configuration is declarative; it cannot start a run.
 
-`yantra.core.budgets.ExecutionBudget` validates finite positive wall time, call/step/token bounds, and optional positive cost. `max_model_calls` cannot exceed `max_steps`. Limits are configuration only; no runtime enforcement exists.
+`yantra.core.budgets.ExecutionBudget` validates finite positive wall time, call/step/token bounds, and optional positive cost. `max_model_calls` cannot exceed `max_steps`. The YANTRA-003 runtime uses equivalent finite limits through `yantra.runtime.AgentRunConfig` and enforces them for each run.
 
 ## Messages
 
@@ -88,6 +88,25 @@ Public exceptions derive from `YantraError` and include configuration, provider 
 
 `get_logger(name, level=..., **context)` returns a standard-library structured logging facade under `yantra.<name>`. Named fields are attached as `LogRecord` extras. Sensitive field names and common secret patterns are redacted. `exception()` intentionally omits raw tracebacks because exception text may contain secrets. Importing the package does not configure handlers or root logging. This helper is not a substitute for comprehensive secret-aware telemetry review.
 
+## YANTRA-003 agent execution
+
+`yantra.runtime.AgentExecutionEngine` accepts an existing `ModelGateway` and
+`ToolRegistry`, then runs a bounded asynchronous model/tool loop. It preserves
+message order and call IDs, executes registered tools sequentially, and returns
+an immutable `AgentRunResult` with terminal state, termination reason, ordered
+steps, tool observations, known usage/cost, and sanitized trace entries.
+
+`CancellationToken` provides explicit cooperative cancellation. External task
+cancellation propagates as normal `asyncio.CancelledError`. Tool failures are
+structured observations; duplicate call IDs and malformed empty responses fail
+the run. The engine does not add shell, filesystem, browser, MCP, persistence,
+or authorization-policy capabilities. See [agent execution engine](../architecture/agent-execution-engine.md).
+
 ## Limitations
 
-No full agent execution loop, tool execution/authorization, skill system, general-purpose CLI, database integration, Redis, pgvector, distributed coordination, or production support is implemented. Hosted CI execution, Windows compatibility, and production deployment controls are not verified. YANTRA is pre-1.0; `0.2.0` does not promise a stable API. See the [release audit](../releases/v0.2.0-release-audit.md).
+YANTRA-003 provides a local bounded loop and controlled registry executor, but
+there is no durable persistence, authorization policy engine, skill system,
+general-purpose CLI, Redis, pgvector, distributed coordination, or production
+support. Hosted CI execution, Windows compatibility, and production deployment
+controls are not verified. YANTRA is pre-1.0; `0.2.0` does not promise a stable
+API. See the [release audit](../releases/v0.2.0-release-audit.md).

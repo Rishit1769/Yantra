@@ -4,7 +4,7 @@
 
 YANTRA is a model-agnostic AI agent harness and orchestration framework intended for open-source development. Its architecture aims to give developers explicit control over agent execution, tools, skills, state, persistence, security policy, and observability without binding the framework to one model vendor or application.
 
-> **Status:** YANTRA-001 core contracts and the YANTRA-002 model gateway foundation are implemented. The `0.2.0` release candidate has a 3-OS/3-Python CI matrix configured, but hosted runs are pending. Provider protocol tests are mocked; only narrow, user-reported OpenCode Go results exist and were not rerun for this candidate. The agent execution loop, general-purpose CLI, persistence integration, and production support remain unimplemented. See the [provider verification matrix](docs/features/provider-verification.md), [release notes](docs/releases/v0.2.0-release-notes.md), and [release audit](docs/releases/v0.2.0-release-audit.md).
+> **Status:** YANTRA-001 core contracts, YANTRA-002 model gateway, and experimental YANTRA-003-V01 bounded agent execution are implemented on their respective local branches. The `0.2.0` release candidate remains isolated and has a 3-OS/3-Python CI matrix configured, but hosted runs are pending. Provider protocol tests are mocked; only narrow, user-reported OpenCode Go results exist and were not rerun for this candidate. Persistence integration, general-purpose CLI, and production support remain unimplemented. See the [provider verification matrix](docs/features/provider-verification.md), [agent execution engine](docs/architecture/agent-execution-engine.md), [release notes](docs/releases/v0.2.0-release-notes.md), and [release audit](docs/releases/v0.2.0-release-audit.md).
 
 ## Why a harness?
 
