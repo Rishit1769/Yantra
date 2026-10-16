@@ -56,11 +56,10 @@ class OfflinePolicyProvider:
 
 
 async def main() -> None:
-    invocations = 0
+    invocations: list[None] = []
 
     def read_value(arguments: ReadInput) -> dict[str, str]:
-        nonlocal invocations
-        invocations += 1
+        invocations.append(None)
         return {"value": f"offline:{arguments.key}"}
 
     tools = ToolRegistry()
@@ -96,12 +95,12 @@ async def main() -> None:
         observation = cast(dict[str, object], result.tool_results[0].result)
         return str(observation.get("error_code", observation.get("value", "unknown")))
 
-    allowed = await invoke(PolicyContext(granted_scopes={"store.read"}))
+    allowed = await invoke(PolicyContext(granted_scopes=frozenset({"store.read"})))
     denied = await invoke(PolicyContext())
     print(f"with explicit grant: {allowed}")
     print(f"without grant: {denied}")
-    print(f"handler invocations: {invocations}")
-    if allowed != "offline:status" or denied != "tool_not_permitted" or invocations != 1:
+    print(f"handler invocations: {len(invocations)}")
+    if allowed != "offline:status" or denied != "tool_not_permitted" or len(invocations) != 1:
         raise SystemExit("secure tool policy example failed")
 
 

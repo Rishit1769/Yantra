@@ -37,7 +37,7 @@ from yantra.tools.execution import (
     ExecutionLimits,
     canonical_json_digest,
 )
-from yantra.tools.executor import ToolExecutor
+from yantra.tools.executor import ToolExecutor, _EngineToolExecutor  # pyright: ignore[reportPrivateUsage]
 from yantra.tools.policy import (
     DefaultPolicyEvaluator,
     PolicyContext,
@@ -124,24 +124,22 @@ class AgentExecutionEngine:
         self.gateway = gateway
         self.__execution_authority = ExecutionAuthorizationAuthority()
         if isinstance(tools, ToolExecutor):
-            self.tool_executor = tools
-            if subprocess_boundary is not None:
-                self.tool_executor.subprocess_boundary = subprocess_boundary
-            elif execution_limits is not None:
-                self.tool_executor.subprocess_boundary = SubprocessExecutionBoundary(
-                    execution_limits
-                )
-            self.tool_executor._bind_authorization_key(  # pyright: ignore[reportPrivateUsage]
-                self.__execution_authority._verifier_key()  # pyright: ignore[reportPrivateUsage]
-            )
-        else:
-            self.tool_executor = ToolExecutor(
-                tools,
-                subprocess_boundary=subprocess_boundary,
+            selected_boundary = subprocess_boundary
+            if selected_boundary is None and execution_limits is None:
+                selected_boundary = tools.subprocess_boundary
+            self.tool_executor = _EngineToolExecutor(
+                tools.registry,
+                self.__execution_authority._verifier_key(),  # pyright: ignore[reportPrivateUsage]
+                subprocess_boundary=selected_boundary,
                 execution_limits=execution_limits,
             )
-            self.tool_executor._bind_authorization_key(  # pyright: ignore[reportPrivateUsage]
-                self.__execution_authority._verifier_key()  # pyright: ignore[reportPrivateUsage]
+            self.tool_executor.in_process_boundary = tools.in_process_boundary
+        else:
+            self.tool_executor = _EngineToolExecutor(
+                tools,
+                self.__execution_authority._verifier_key(),  # pyright: ignore[reportPrivateUsage]
+                subprocess_boundary=subprocess_boundary,
+                execution_limits=execution_limits,
             )
         self.policy_evaluator = policy_evaluator or DefaultPolicyEvaluator()
         self.approval_provider = approval_provider

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -15,8 +15,11 @@ from yantra.core.messages import Message, MessageRole, TextContent, ToolCall
 from yantra.providers.base import FinishReason, ModelRequest, ModelResponse
 from yantra.providers.gateway import ModelGateway
 from yantra.providers.registry import ProviderRegistry
-from yantra.runtime import AgentExecutionEngine, AgentRunConfig
+from yantra.runtime import AgentExecutionEngine, AgentRunConfig, CancellationToken
 from yantra.tools import (
+    ApprovalDecision,
+    ApprovalRequest,
+    ApprovalStatus,
     DeterministicApprovalProvider,
     ExecutionLimits,
     PolicyContext,
@@ -36,6 +39,7 @@ from yantra.tools.execution import (
     ExecutionAuthorizationAuthority,
     canonical_json_digest,
 )
+from yantra.tools.executor import _EngineToolExecutor
 
 
 class ConcatInput(BaseModel):
@@ -89,7 +93,7 @@ def worker_tool(handler_id: str = "yantra.demo.concat") -> ToolDefinition:
 
 def worker_engine(
     call: ToolCall,
-    registry: ToolRegistry,
+    registry: ToolRegistry | ToolExecutor,
     *,
     approvals=None,
     boundary: SubprocessExecutionBoundary | None = None,
@@ -122,13 +126,15 @@ async def direct_worker_execution(
     *,
     boundary: SubprocessExecutionBoundary | None = None,
     timeout: float = 2.0,
-    executor: ToolExecutor | None = None,
 ):
     registry = ToolRegistry()
     registry.register(definition)
-    tool_executor = executor or ToolExecutor(registry, subprocess_boundary=boundary)
     authority = ExecutionAuthorizationAuthority()
-    tool_executor._bind_authorization_key(authority._verifier_key())
+    tool_executor = _EngineToolExecutor(
+        registry,
+        authority._verifier_key(),
+        subprocess_boundary=boundary,
+    )
     call = ToolCall(call_id="direct-call", name=definition.name, arguments=arguments)
     validated = definition.validate_input(call.arguments)
     del validated
@@ -167,6 +173,29 @@ async def test_explicitly_registered_subprocess_tool_executes_and_correlates() -
     assert result.tool_results[0].call_id == call.call_id
     assert result.tool_results[0].result == {"value": "Yantra"}
     assert engine.tool_executor.subprocess_boundary.active_worker_count == 0
+
+
+@pytest.mark.asyncio
+async def test_engine_wraps_public_executor_without_exposing_its_verifier() -> None:
+    registry = ToolRegistry()
+    registry.register(worker_tool())
+    public_executor = ToolExecutor(registry)
+    call = ToolCall(
+        call_id="wrapped-executor",
+        name="worker.concat",
+        arguments={"left": "Yan", "right": "tra"},
+    )
+    engine = worker_engine(call, public_executor)
+    result = await engine.run(
+        worker_config(PolicyContext(granted_scopes=frozenset({"demo.concat"})))
+    )
+    direct = await public_executor.execute(
+        call,
+        authorization=PolicyDecision(effect=PolicyEffect.ALLOW, reason=PolicyReason.ALLOWED),
+    )
+    assert result.tool_results[0].result == {"value": "Yantra"}
+    assert direct.is_error
+    assert public_executor is not engine.tool_executor
 
 
 @pytest.mark.asyncio
@@ -241,6 +270,64 @@ async def test_approval_is_required_before_subprocess_dispatch() -> None:
 
 
 @pytest.mark.asyncio
+async def test_late_approval_after_cancellation_never_dispatches_worker() -> None:
+    started = asyncio.Event()
+    cancellation_seen = asyncio.Event()
+    release_response = asyncio.Event()
+
+    class LateApprovalProvider:
+        async def request_approval(self, request: ApprovalRequest) -> ApprovalDecision:
+            started.set()
+            try:
+                await release_response.wait()
+            except asyncio.CancelledError:
+                cancellation_seen.set()
+                await asyncio.shield(release_response.wait())
+            return ApprovalDecision(
+                request_id=request.request_id,
+                status=ApprovalStatus.APPROVED,
+                authorization_sha256=request.authorization_sha256,
+            )
+
+    definition = worker_tool().model_copy(update={"risk_level": ToolRiskLevel.HIGH})
+    registry = ToolRegistry()
+    registry.register(definition)
+    call = ToolCall(
+        call_id="late-approval", name=definition.name, arguments={"left": "a", "right": "b"}
+    )
+
+    class CountingBoundary(SubprocessExecutionBoundary):
+        calls = 0
+
+        async def execute(self, *args, **kwargs):
+            self.calls += 1
+            return await super().execute(*args, **kwargs)
+
+    boundary = CountingBoundary()
+    engine = worker_engine(call, registry, approvals=LateApprovalProvider(), boundary=boundary)
+    cancellation = CancellationToken()
+    task = asyncio.create_task(
+        engine.run(
+            worker_config(
+                PolicyContext(
+                    granted_scopes=frozenset({"demo.concat"}),
+                    approval_required_risks=frozenset({ToolRiskLevel.HIGH}),
+                )
+            ),
+            cancellation=cancellation,
+        )
+    )
+    await started.wait()
+    cancellation.cancel()
+    await cancellation_seen.wait()
+    release_response.set()
+    result = await task
+    assert result.termination_reason.value == "cancelled"
+    assert boundary.calls == 0
+    assert boundary.active_worker_count == 0
+
+
+@pytest.mark.asyncio
 async def test_public_decision_and_forged_or_replayed_signed_authority_fail() -> None:
     definition = worker_tool()
     registry = ToolRegistry()
@@ -255,10 +342,27 @@ async def test_public_decision_and_forged_or_replayed_signed_authority_fail() ->
     )
     assert result.is_error
 
+    assert not hasattr(executor, "_bind_authorization_key")
+    caller_authority = ExecutionAuthorizationAuthority()
+    caller_token = caller_authority.issue(
+        run_id=uuid4(),
+        call_id=call.call_id,
+        definition=definition,
+        arguments_sha256=canonical_json_digest(call.arguments),
+        decision=public_allow,
+        approval_granted=False,
+    )
+    result = await executor.execute(
+        call,
+        authorization=public_allow,
+        execution_authorization=caller_token,
+        run_id=caller_token.run_id,
+        expected_definition=definition,
+    )
+    assert result.is_error
+
     result, executor, token, authority, run_id, call = await direct_worker_execution(
-        definition,
-        {"left": "a", "right": "b"},
-        executor=executor,
+        definition, {"left": "a", "right": "b"}
     )
     assert result.result == {"value": "ab"}
     replay = await executor.execute(
@@ -359,8 +463,12 @@ async def _run_direct(
     definition: ToolDefinition,
     arguments: dict[str, Any],
     boundary: SubprocessExecutionBoundary,
+    *,
+    timeout: float = 2.0,
 ):
-    result, *_ = await direct_worker_execution(definition, arguments, boundary=boundary)
+    result, *_ = await direct_worker_execution(
+        definition, arguments, boundary=boundary, timeout=timeout
+    )
     return result
 
 
@@ -392,6 +500,115 @@ async def test_worker_timeout_cancellation_and_repeated_cleanup() -> None:
         *(_run_direct(echo, {"left": "a", "right": str(index)}, boundary) for index in range(4))
     )
     assert all(result.result["value"].startswith("a") for result in results)
+    assert boundary.active_worker_count == 0
+
+
+@pytest.mark.asyncio
+async def test_worker_capacity_rejects_overflow_and_releases_after_cancellation() -> None:
+    blocker = ToolDefinition(
+        name="worker.capacity_block",
+        input_model=EmptyInput,
+        execution_boundary=ToolExecutionBoundaryMode.SUBPROCESS,
+        worker_handler_id="yantra.demo.block",
+        permission_scopes=frozenset({"demo.block"}),
+    )
+    boundary = SubprocessExecutionBoundary(
+        ExecutionLimits(max_concurrent_workers=1, max_execution_seconds=5)
+    )
+    first = asyncio.create_task(_run_direct(blocker, {}, boundary))
+    async with asyncio.timeout(5):
+        while boundary.active_worker_count == 0:
+            await asyncio.sleep(0)
+
+    overflow = await _run_direct(worker_tool(), {"left": "a", "right": "b"}, boundary)
+    assert overflow.result["error_code"] == "tool_worker_limit"
+    first.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await first
+    assert boundary.active_worker_count == 0
+
+    recovered = await _run_direct(worker_tool(), {"left": "a", "right": "b"}, boundary)
+    assert recovered.result == {"value": "ab"}
+    assert boundary.active_worker_count == 0
+
+
+@pytest.mark.asyncio
+async def test_repeated_cancellation_during_worker_startup_reaps_spawned_child() -> None:
+    started = asyncio.Event()
+    continue_startup = asyncio.Event()
+
+    class PausedStartupBoundary(SubprocessExecutionBoundary):
+        process: asyncio.subprocess.Process | None = None
+
+        async def _spawn_worker(self) -> asyncio.subprocess.Process:
+            started.set()
+            await continue_startup.wait()
+            self.process = await super()._spawn_worker()
+            return self.process
+
+    boundary = PausedStartupBoundary()
+    task = asyncio.create_task(
+        _run_direct(
+            worker_tool("yantra.demo.block"),
+            {"left": "", "right": ""},
+            boundary,
+        )
+    )
+    await started.wait()
+    task.cancel()
+    task.cancel()
+    continue_startup.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert boundary.process is not None
+    assert boundary.process.returncode is not None
+    assert boundary.active_worker_count == 0
+
+
+@pytest.mark.asyncio
+async def test_worker_completion_racing_cancellation_does_not_leak_child() -> None:
+    completed = asyncio.Event()
+
+    class PausedReturnBoundary(SubprocessExecutionBoundary):
+        async def _run_worker(self, request: bytes, invocation_id: UUID):
+            result = await super()._run_worker(request, invocation_id)
+            completed.set()
+            await asyncio.Event().wait()
+            return result
+
+    boundary = PausedReturnBoundary()
+    task = asyncio.create_task(_run_direct(worker_tool(), {"left": "a", "right": "b"}, boundary))
+    await completed.wait()
+    assert boundary.active_worker_count == 0
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert boundary.active_worker_count == 0
+
+
+@pytest.mark.asyncio
+async def test_timeout_racing_completed_worker_has_deterministic_timeout_result() -> None:
+    completed = asyncio.Event()
+
+    class PausedReturnBoundary(SubprocessExecutionBoundary):
+        async def _run_worker(self, request: bytes, invocation_id: UUID):
+            result = await super()._run_worker(request, invocation_id)
+            completed.set()
+            await asyncio.Event().wait()
+            return result
+
+    boundary = PausedReturnBoundary()
+    task = asyncio.create_task(
+        _run_direct(
+            worker_tool(),
+            {"left": "a", "right": "b"},
+            boundary,
+            timeout=0.05,
+        )
+    )
+    await completed.wait()
+    result = await task
+    assert result.result["error_code"] == "tool_timeout"
     assert boundary.active_worker_count == 0
 
 

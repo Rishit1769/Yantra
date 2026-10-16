@@ -8,7 +8,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -102,12 +102,7 @@ class SubprocessExecutionBoundary:
         try:
             process = await asyncio.shield(spawn_task)
         except asyncio.CancelledError:
-            try:
-                process = await spawn_task
-            except Exception:
-                raise
-            await self._terminate(process)
-            raise
+            await self._complete_cancelled_startup(spawn_task)
         except OSError:
             return ExecutionResult(status=ExecutionResultStatus.STARTUP_FAILURE)
 
@@ -168,7 +163,7 @@ class SubprocessExecutionBoundary:
                 value=response.value,
             )
         except asyncio.CancelledError:
-            await self._terminate(process)
+            await self._terminate_shielded(process)
             raise
         except (BrokenPipeError, ConnectionError):
             await self._terminate(process)
@@ -177,14 +172,8 @@ class SubprocessExecutionBoundary:
             await self._terminate(process)
             return ExecutionResult(status=ExecutionResultStatus.PROTOCOL_FAILURE)
         finally:
-            for reader in readers:
-                if not reader.done():
-                    reader.cancel()
-            if readers:
-                await asyncio.gather(*readers, return_exceptions=True)
-            if process.returncode is None:
-                await self._terminate(process)
-            self._active.discard(process)
+            cleanup = asyncio.create_task(self._cleanup_worker(process, readers))
+            await self._await_cleanup(cleanup)
 
     async def _spawn_worker(self) -> asyncio.subprocess.Process:
         env = {
@@ -243,9 +232,53 @@ class SubprocessExecutionBoundary:
         except TimeoutError:
             try:
                 process.kill()
-            except ProcessLookupError:
+            except (ProcessLookupError, OSError):
                 pass
             await process.wait()
+
+    async def _terminate_shielded(self, process: asyncio.subprocess.Process) -> None:
+        cleanup = asyncio.create_task(self._terminate(process))
+        await self._await_cleanup(cleanup)
+
+    async def _complete_cancelled_startup(
+        self, startup: asyncio.Task[asyncio.subprocess.Process]
+    ) -> NoReturn:
+        while not startup.done():
+            try:
+                await asyncio.shield(startup)
+            except asyncio.CancelledError:
+                continue
+        try:
+            process = startup.result()
+        except BaseException:
+            raise asyncio.CancelledError from None
+        await self._terminate_shielded(process)
+        raise asyncio.CancelledError
+
+    async def _await_cleanup(self, cleanup: asyncio.Task[None]) -> None:
+        cancelled = False
+        while not cleanup.done():
+            try:
+                await asyncio.shield(cleanup)
+            except asyncio.CancelledError:
+                cancelled = True
+        cleanup.result()
+        if cancelled:
+            raise asyncio.CancelledError
+
+    async def _cleanup_worker(
+        self, process: asyncio.subprocess.Process, readers: list[asyncio.Task[bytes]]
+    ) -> None:
+        try:
+            for reader in readers:
+                if not reader.done():
+                    reader.cancel()
+            if readers:
+                await asyncio.gather(*readers, return_exceptions=True)
+            if process.returncode is None:
+                await self._terminate(process)
+        finally:
+            self._active.discard(process)
 
 
 def _reject_duplicate_keys(payload: bytes) -> None:

@@ -1,4 +1,4 @@
-# Secure Tool Runtime and Restricted Execution (YANTRA-004-V03)
+# Secure Tool Runtime and Restricted Execution (YANTRA-004-V04)
 
 YANTRA-004 adds an in-process authorization layer to the bounded YANTRA-003
 agent loop. Logical capability scopes and an explicit tool-name allowlist are
@@ -16,6 +16,12 @@ cross-invocation approvals from authorizing dispatch. Provider errors, malformed
 responses, cancellation, and expiry fail closed. This does not defend against
 a compromised host/provider, malicious in-process Python, or direct calls to a
 handler by trusted application code.
+
+These are separate guarantees: **authorization** decides whether policy permits
+the exact call; **approval** records trusted consent when policy requires it;
+**process isolation** runs eligible work in a separate OS process;
+**sandboxing** requires OS-enforced restrictions on that process. YANTRA
+implements the first three in the stated scope, but does not provide the fourth.
 
 ## Policy contracts
 
@@ -62,13 +68,17 @@ digest.
 `InMemoryApprovalStore` binds a request to the original tool definition and
 uses a thread lock to allow only one atomic consumption. Engine policy and
 registry identity are revalidated immediately before consume/dispatch. The
-executor now verifies an engine-HMAC authorization bound to the exact run, call
-ID, tool, arguments digest, policy decision, approval state, and registered
-definition identity, and consumes its invocation ID once. A public
-`PolicyDecision(ALLOW)` or fabricated claims are insufficient. The signing key
-and token are process-local; this closes the V02 callable private-capability
-issuer defect for ordinary API callers, but is not protection from malicious
-Python code with introspection or control of the process.
+engine-owned internal executor verifies an HMAC authorization bound to the
+exact run, call ID, tool, argument digest, policy decision, approval state, and
+registered definition identity, and consumes its invocation ID once. A public
+`PolicyDecision(ALLOW)` or caller-created claims are insufficient. A standalone
+public `ToolExecutor` has no verifier and fails closed; when supplied to the
+engine, its registry and configured boundaries are wrapped by a new
+engine-bound executor. HMAC keys are never returned by the executor API. This
+closes both the V02 callable capability issuer and the V03 private key-binding
+method for supported public API callers. Python is not a same-process security
+boundary: code with private-member introspection, runtime monkeypatching, or
+control of the host process remains trusted.
 
 The default approval lifetime is 60 seconds (configurable up to one hour).
 Cancellation revokes pending approval before dispatch. Approval is consumed
@@ -99,28 +109,55 @@ Process termination cannot roll back external effects. In-process synchronous
 handlers run in a thread and cannot be forcibly stopped. `SideEffect` and risk
 labels remain metadata unless trusted policy uses them to restrict access.
 
-## V01/V02 security review and V03 disposition
+## V01–V04 security review
 
-The V02 executor exposed a private capability-issuing method on the executor
-object. Any ordinary caller able to invoke that method could mint dispatch
-authority without passing through the engine's policy/approval flow. This was a
-confirmed authorization defect, despite the method's underscore naming. V03
-removes that issuer from the executor and adds engine-held HMAC signing,
-executor-side signature/claim verification, exact definition and argument
-binding, and atomic one-use consumption. Tests cover forged claims, replay,
-and the public ALLOW-only path. This protects the supported API path, not a
-hostile same-process Python adversary.
+| Finding | Severity / category | Components and root cause | Evidence, correction, regression, status |
+|---|---|---|---|
+| V02 dispatch capability issuer was callable from a public executor object. | HIGH — authorization vulnerability | `ToolExecutor` exposed minting; callers did not need engine policy/approval. | Reproduced by direct method access. V03 removed the issuer and added HMAC dispatch authority. Tests reject public ALLOW-only and forged claims. Resolved for supported APIs. |
+| V03 key-binding method allowed a caller to select a signing key for its executor. | HIGH — authorization vulnerability | `ToolExecutor._bind_authorization_key` accepted caller-provided bytes; combined with caller-created authority this enabled self-signed valid dispatch. | Regression constructs a caller-owned authority/token and confirms the public executor rejects it. V04 removes key binding; public executor has no verifier, and the engine wraps it with an engine-owned verifier. Resolved for supported APIs. |
+| Name allowlist, exact scope grants and explicit-denial precedence. | No issue found | Engine checks run names and policy before issuance. | Denial-before-dispatch tests remain passing. |
+| Approval provider spoofing, mismatch, expiry, cancellation, replay, and concurrency. | No issue found | Provider remains host-injected; approval is bound and atomically consumed. | Existing binding, expiry, cancellation, replay and atomicity tests remain passing; V04 adds a late-approval-after-cancellation test. |
+| Registry substitution after authorization. | No issue found | Dispatch revalidates exact registered definition identity and policy. | Existing registry mutation regression remains passing. |
+| JSON ambiguity, worker exception leakage, and model-selected executable/import. | No issue found | Strict JSON, static handler allowlist, and normalized errors are used. | Malformed/duplicate protocol tests pass; no shell or pickle path exists. |
+| Process descendants and OS-level resource isolation. | LOW — documented limitation | Ordinary subprocess APIs only manage the direct child here. | Direct child cleanup is tested; process-tree cleanup and OS quotas/restrictions remain unimplemented. |
 
-The review also confirmed that name allowlisting, scope denial precedence,
-approval-provider fail-closed behavior, approval binding/expiry/atomic consume,
-and policy/registry revalidation remain enforced before dispatch. Subprocess
-mode adds process separation and killable direct-child cleanup but does not
-claim filesystem, network, descendant, or OS-level isolation. The boundary
-limits are protocol/lifecycle controls, not CPU, memory, or disk quotas.
+The HMAC key is generated randomly by the engine-owned authority. Canonical
+sorted compact JSON encodes typed claims; HMAC-SHA256 uses constant-time
+signature comparison. Claims bind run, invocation, call, tool definition,
+arguments, decision and approval state. Consumption is atomic under a thread
+lock. Python object internals are not secret from hostile code in the same
+process; that code is outside the supported threat boundary.
+
+Name allowlisting, scope denial precedence, fail-closed approval behavior,
+approval binding/expiry/atomic consumption, and policy/registry revalidation
+remain enforced before dispatch. Pre-observed cancellation is checked before an
+operation starts; pending approval is revoked. Cancellation racing an already
+completed operation follows asyncio task-completion ordering. Startup and
+repeated cancellation now await shielded cleanup so a returned direct child is
+reaped.
+
+The implementation deliberately does not create process groups or Windows Job
+Objects. Without actual Windows validation it cannot claim consistent
+descendant cleanup across both target platforms. It uses no broad PID
+enumeration. Protocol/lifecycle limits are not CPU, memory, or disk quotas.
+
+## Security guarantees matrix
+
+| Capability | Status | Evidence / boundary |
+|---|---|---|
+| Name/scope policy, approvals, exact-call HMAC authorization | Implemented and locally verified | macOS / Python 3.12 tests; public standalone executor calls fail closed. |
+| JSON protocol, static handlers, byte/time/concurrency limits | Implemented and locally verified | Deterministic offline worker tests on macOS. |
+| Direct-child timeout/cancellation cleanup, including startup and repeated cancellation | Implemented and locally verified | Terminate, wait, and kill after grace if needed. |
+| Subprocess startup, termination, handles, and environment behavior on Windows | Implemented but platform-unverified | Follow [Windows validation](../development/secure-tool-platform-validation.md). |
+| Python 3.13 and 3.14 | Runtime-unverified | Declared by project metadata; local run used Python 3.12 only. |
+| Descendant/process-tree cleanup | Planned, not implemented | No process groups or Windows Job Objects; direct-child guarantee only. |
+| CPU/memory/disk quotas; filesystem/network restrictions; rollback | Explicitly unsupported | Needs separate OS-enforced design and platform evidence. |
+| Containment of hostile in-process Python | Explicitly unsupported | Host code and registered handlers are trusted. |
 
 ## Offline example
 
 Run `uv run python examples/secure_tool_approval.py` for the V02 approval
-lifecycle. `examples/secure_tool_boundaries.py` demonstrates fixed-handler
-subprocess execution and deadline cleanup without network or credentials.
+lifecycle. `examples/secure_tool_boundaries.py` demonstrates in-process and
+fixed-handler subprocess execution, policy denial, timeout cleanup, and
+sanitized diagnostics without network or credentials.
 `examples/secure_tool_policy.py` remains the V01 grant/deny demonstration.

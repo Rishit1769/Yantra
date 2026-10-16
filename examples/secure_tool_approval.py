@@ -83,11 +83,10 @@ def engine(registry: ToolRegistry, approvals: ApprovalProvider) -> AgentExecutio
 
 async def main() -> None:
     memory: dict[str, str] = {}
-    writes = 0
+    writes: list[None] = []
 
     def write_value(arguments: WriteInput) -> dict[str, str]:
-        nonlocal writes
-        writes += 1
+        writes.append(None)
         memory[arguments.key] = arguments.value
         return {"stored": arguments.key}
 
@@ -104,8 +103,8 @@ async def main() -> None:
         )
     )
     context = PolicyContext(
-        granted_scopes={"memory.write"},
-        approval_required_scopes={"memory.write"},
+        granted_scopes=frozenset({"memory.write"}),
+        approval_required_scopes=frozenset({"memory.write"}),
     )
 
     async def invoke(approvals: ApprovalProvider):
@@ -134,10 +133,10 @@ async def main() -> None:
     print("approved:", "success" if not approved.tool_results[0].is_error else "failed")
     print("rejected:", cast(dict[str, object], rejected.tool_results[0].result)["error_code"])
     print("replay:", cast(dict[str, object], replayed.tool_results[0].result)["error_code"])
-    print("handler writes:", writes)
+    print("handler writes:", len(writes))
     print("sanitized diagnostics:\n" + format_run_result(replayed))
     if (
-        writes != 2
+        len(writes) != 2
         or not rejected.tool_results[0].is_error
         or not replayed.tool_results[0].is_error
     ):

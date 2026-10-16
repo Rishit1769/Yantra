@@ -42,7 +42,6 @@ class ToolExecutor:
         execution_limits: ExecutionLimits | None = None,
     ) -> None:
         self.registry = registry
-        self.__authorization_key: bytes | None = None
         self.__consumed_authorizations: set[UUID] = set()
         self.__authorization_lock = Lock()
         self.in_process_boundary: ExecutionBoundary = InProcessExecutionBoundary()
@@ -50,10 +49,16 @@ class ToolExecutor:
             execution_limits or ExecutionLimits()
         )
 
-    def _bind_authorization_key(self, key: bytes) -> None:
-        if self.__authorization_key is not None and self.__authorization_key != key:
-            raise ValueError("executor is already bound to another execution authority")
-        self.__authorization_key = key
+    def _verify_authorization(
+        self,
+        authorization: ExecutionAuthorization,
+        *,
+        run_id: UUID,
+        call: ToolCall,
+        definition: ToolDefinition,
+    ) -> bool:
+        del authorization, run_id, call, definition
+        return False
 
     async def execute(
         self,
@@ -76,16 +81,13 @@ class ToolExecutor:
             )
 
         if (
-            self.__authorization_key is None
-            or execution_authorization is None
+            execution_authorization is None
             or run_id is None
-            or not verify_execution_authorization(
+            or not self._verify_authorization(
                 execution_authorization,
-                self.__authorization_key,
                 run_id=run_id,
-                call_id=call.call_id,
+                call=call,
                 definition=definition,
-                arguments_sha256=canonical_json_digest(call.arguments),
             )
             or (authorization is not None and authorization != execution_authorization.decision)
         ):
@@ -191,4 +193,40 @@ class ToolExecutor:
             name=call.name,
             result={"error_code": code, "message": message, "policy_reason": decision.reason},
             is_error=True,
+        )
+
+
+class _EngineToolExecutor(ToolExecutor):  # pyright: ignore[reportUnusedClass]
+    """Executor with an engine-provided verifier key; intentionally not public API."""
+
+    def __init__(
+        self,
+        registry: ToolRegistry,
+        verification_key: bytes,
+        *,
+        subprocess_boundary: SubprocessExecutionBoundary | None = None,
+        execution_limits: ExecutionLimits | None = None,
+    ) -> None:
+        super().__init__(
+            registry,
+            subprocess_boundary=subprocess_boundary,
+            execution_limits=execution_limits,
+        )
+        self.__verification_key = verification_key
+
+    def _verify_authorization(
+        self,
+        authorization: ExecutionAuthorization,
+        *,
+        run_id: UUID,
+        call: ToolCall,
+        definition: ToolDefinition,
+    ) -> bool:
+        return verify_execution_authorization(
+            authorization,
+            self.__verification_key,
+            run_id=run_id,
+            call_id=call.call_id,
+            definition=definition,
+            arguments_sha256=canonical_json_digest(call.arguments),
         )
