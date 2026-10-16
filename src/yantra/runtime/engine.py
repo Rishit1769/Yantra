@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 from collections.abc import Awaitable, Callable, Sequence
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import TypeVar
+from uuid import uuid4
 
 from yantra.core.contracts import TokenUsage
 from yantra.core.errors import ProviderError, ToolNotFoundError, YantraError
@@ -20,6 +24,14 @@ from yantra.runtime.models import (
     AgentStep,
     AgentTerminationReason,
     ExecutionTraceEntry,
+)
+from yantra.tools.approvals import (
+    ApprovalDecision,
+    ApprovalProvider,
+    ApprovalRequest,
+    ApprovalStatus,
+    ApprovalStore,
+    InMemoryApprovalStore,
 )
 from yantra.tools.base import ToolDefinition
 from yantra.tools.executor import ToolExecutor
@@ -58,6 +70,45 @@ class _CancellationRequested(Exception):
     pass
 
 
+def _canonical_digest(value: object) -> str:
+    encoded = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
+    return hashlib.sha256(encoded.encode("utf-8", errors="strict")).hexdigest()
+
+
+def _authorization_digest(
+    config: AgentRunConfig, definition: ToolDefinition, decision: PolicyDecision
+) -> str:
+    policy_context = config.permission_context
+    context = None
+    if policy_context is not None:
+        context = {
+            "granted_scopes": sorted(policy_context.granted_scopes),
+            "denied_scopes": sorted(policy_context.denied_scopes),
+            "approval_required_scopes": sorted(policy_context.approval_required_scopes),
+            "approval_required_risks": sorted(
+                risk.value for risk in policy_context.approval_required_risks
+            ),
+        }
+    return _canonical_digest(
+        {
+            "allow_legacy_unscoped_tools": config.allow_legacy_unscoped_tools,
+            "context": context,
+            "decision": decision.model_dump(mode="json"),
+            "definition_identity": id(definition),
+            "permission_scopes": sorted(definition.permission_scopes),
+            "risk_level": definition.risk_level.value,
+            "side_effect": definition.side_effect.value,
+            "tool_names": sorted(config.tool_names),
+        }
+    )
+
+
 class AgentExecutionEngine:
     """Execute a bounded model/tool loop using an existing ``ModelGateway``."""
 
@@ -67,10 +118,18 @@ class AgentExecutionEngine:
         tools: ToolRegistry | ToolExecutor,
         *,
         policy_evaluator: PolicyEvaluator | None = None,
+        approval_provider: ApprovalProvider | None = None,
+        approval_store: ApprovalStore | None = None,
+        approval_ttl_seconds: float = 60.0,
     ) -> None:
         self.gateway = gateway
         self.tool_executor = tools if isinstance(tools, ToolExecutor) else ToolExecutor(tools)
         self.policy_evaluator = policy_evaluator or DefaultPolicyEvaluator()
+        self.approval_provider = approval_provider
+        self.approval_store = approval_store or InMemoryApprovalStore()
+        if not 0 < approval_ttl_seconds <= 3600:
+            raise ValueError("approval_ttl_seconds must be between 0 and 3600")
+        self.approval_ttl_seconds = approval_ttl_seconds
 
     async def run(
         self, config: AgentRunConfig, *, cancellation: CancellationToken | None = None
@@ -376,6 +435,9 @@ class AgentExecutionEngine:
                 set_state(RunState.WAITING_FOR_TOOL, event="tools_waiting")
                 for call in response.message.tool_calls:
                     if call.name not in config.tool_names:
+                        decision = PolicyDecision(
+                            effect=PolicyEffect.DENY, reason=PolicyReason.POLICY_RESTRICTED
+                        )
                         result = ToolResult(
                             call_id=call.call_id,
                             name=call.name,
@@ -402,9 +464,163 @@ class AgentExecutionEngine:
                             current_decision: PolicyDecision = decision,
                             current_definition: ToolDefinition | None = definition,
                         ) -> ToolResult:
+                            if current_definition is None:
+                                return await self.tool_executor.execute(
+                                    current_call,
+                                    authorization=current_decision,
+                                )
+                            approved = False
+                            if current_decision.effect == PolicyEffect.APPROVAL_REQUIRED:
+                                approval_provider = self.approval_provider
+                                if approval_provider is None:
+                                    add_trace("approval_provider_failed", outcome="unavailable")
+                                    return self.tool_executor.policy_failure(
+                                        current_call,
+                                        "tool_approval_required",
+                                        "trusted approval is unavailable",
+                                        current_decision,
+                                    )
+                                try:
+                                    args_digest = _canonical_digest(current_call.arguments)
+                                    authorization_digest = _authorization_digest(
+                                        config, current_definition, current_decision
+                                    )
+                                except (TypeError, ValueError):
+                                    add_trace("approval_mismatched", outcome="invalid_binding")
+                                    return self.tool_executor.failure(
+                                        current_call,
+                                        "tool_approval_invalid",
+                                        "approval request could not be bound safely",
+                                    )
+                                request = ApprovalRequest(
+                                    request_id=uuid4(),
+                                    run_id=config.run_id,
+                                    session_id=config.session_id,
+                                    invocation_id=uuid4(),
+                                    tool_name=current_definition.name,
+                                    definition_identity=id(current_definition),
+                                    required_scopes=current_definition.permission_scopes,
+                                    risk_level=current_definition.risk_level,
+                                    policy_effect=current_decision.effect,
+                                    policy_reason=current_decision.reason,
+                                    arguments_sha256=args_digest,
+                                    authorization_sha256=authorization_digest,
+                                    expires_at=datetime.now(UTC)
+                                    + timedelta(seconds=self.approval_ttl_seconds),
+                                )
+                                self.approval_store.register(request, current_definition)
+                                add_trace("approval_requested", outcome="pending")
+                                try:
+                                    provider_response = await self._await(
+                                        lambda: approval_provider.request_approval(request),
+                                        cancellation,
+                                        deadline=deadline,
+                                    )
+                                    decision = ApprovalDecision.model_validate(provider_response)
+                                    if decision.status != ApprovalStatus.APPROVED:
+                                        add_trace("approval_denied", outcome="denied")
+                                        return self.tool_executor.failure(
+                                            current_call,
+                                            "tool_approval_denied",
+                                            "tool invocation was not approved",
+                                        )
+                                    if (
+                                        decision.request_id != request.request_id
+                                        or decision.authorization_sha256
+                                        != request.authorization_sha256
+                                    ):
+                                        add_trace("approval_mismatched", outcome="response_binding")
+                                        return self.tool_executor.failure(
+                                            current_call,
+                                            "tool_approval_mismatched",
+                                            "approval response does not match this invocation",
+                                        )
+                                    add_trace("approval_granted", outcome="approved")
+                                    if datetime.now(UTC) >= request.expires_at:
+                                        add_trace("approval_expired", outcome="expired")
+                                        return self.tool_executor.failure(
+                                            current_call,
+                                            "tool_approval_expired",
+                                            "approval expired before tool dispatch",
+                                        )
+                                    if cancellation is not None and cancellation.is_cancelled:
+                                        raise _CancellationRequested
+                                    if asyncio.get_running_loop().time() >= deadline:
+                                        raise TimeoutError
+                                    if (
+                                        current_definition
+                                        is not self.tool_executor.registry.get(current_call.name)
+                                        or _authorization_digest(
+                                            config,
+                                            current_definition,
+                                            self._authorize(config, current_definition),
+                                        )
+                                        != request.authorization_sha256
+                                        or self._authorize(config, current_definition)
+                                        != current_decision
+                                    ):
+                                        add_trace(
+                                            "approval_mismatched", outcome="revalidation_failed"
+                                        )
+                                        return self.tool_executor.failure(
+                                            current_call,
+                                            "tool_approval_mismatched",
+                                            "approval no longer matches the authorized invocation",
+                                        )
+                                    if not self.approval_store.consume(
+                                        request, current_definition, decision
+                                    ):
+                                        add_trace(
+                                            "approval_replay_rejected", outcome="not_consumed"
+                                        )
+                                        return self.tool_executor.failure(
+                                            current_call,
+                                            "tool_approval_replay",
+                                            "approval is expired, mismatched, or already consumed",
+                                        )
+                                    approved = True
+                                    add_trace("approval_consumed", outcome="approved")
+                                    if cancellation is not None and cancellation.is_cancelled:
+                                        add_trace(
+                                            "approval_cancelled", outcome="consumed_before_dispatch"
+                                        )
+                                        raise _CancellationRequested
+                                except (_CancellationRequested, TimeoutError):
+                                    raise
+                                except Exception:
+                                    add_trace("approval_provider_failed", outcome="failed")
+                                    return self.tool_executor.failure(
+                                        current_call,
+                                        "tool_approval_unavailable",
+                                        "trusted approval could not be obtained",
+                                    )
+                                finally:
+                                    self.approval_store.revoke(request.request_id)
+                                    if (
+                                        not approved
+                                        and cancellation is not None
+                                        and cancellation.is_cancelled
+                                    ):
+                                        add_trace("approval_cancelled", outcome="cancelled")
+                            else:
+                                # Re-check immediately; the registry remains authoritative.
+                                if self._authorize(config, current_definition) != current_decision:
+                                    return self.tool_executor.failure(
+                                        current_call,
+                                        "tool_not_permitted",
+                                        "tool authorization changed before dispatch",
+                                    )
+                            capability = self.tool_executor._issue_capability(  # pyright: ignore[reportPrivateUsage]
+                                current_call, current_definition, approved=approved
+                            )
+                            add_trace(
+                                "tool_dispatched",
+                                outcome="approved" if approved else "authorized",
+                            )
                             return await self.tool_executor.execute(
                                 current_call,
                                 authorization=current_decision,
+                                _capability=capability,
                                 expected_definition=current_definition,
                                 timeout_seconds=max(
                                     0.000001,
@@ -539,7 +755,10 @@ class AgentExecutionEngine:
         definitions = tuple(tool for tool in definitions if tool.name in names)
         eligible: list[ProviderToolSchema] = []
         for tool in definitions:
-            if self._authorize(config, tool).effect == PolicyEffect.ALLOW:
+            effect = self._authorize(config, tool).effect
+            if effect == PolicyEffect.ALLOW or (
+                effect == PolicyEffect.APPROVAL_REQUIRED and self.approval_provider is not None
+            ):
                 eligible.append(tool.provider_schema())
         return tuple(eligible)
 

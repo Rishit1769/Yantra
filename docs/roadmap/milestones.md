@@ -53,3 +53,11 @@ Adaptive context, adaptive routing, evidence-guided recovery, and skill learning
 **Verification evidence:** 208 offline tests passed, including 24 new policy and handler-non-execution tests; Ruff, formatting, Pyright, and `uv lock --check` passed. Both scoped allow/deny and the existing legacy offline demonstrations completed without network or credential access. This local macOS run does not establish Windows behavior or hosted CI. MkDocs was not installed in the locked environment; edited Markdown links were checked directly.
 
 **Boundary:** V01 supplies logical in-process authorization, not an OS sandbox, side-effect enforcement backend, general policy language, approval workflow, durable recovery, or exactly-once effects. The feature remains experimental, is not included in package version `0.2.0`, and does not constitute release approval.
+
+## YANTRA-004-V02 Trusted Tool Approvals and Side-Effect Boundaries
+
+**Status: Implemented for local verification on `feat/yantra-004-secure-tools`; not released.** V02 adds host-injected approval providers, immutable request/decision contracts, canonical SHA-256 argument and authorization binding, request expiry, atomic in-memory single-use consumption, cancellation revocation, policy/registry revalidation, sanitized approval trace categories, and private executor-instance capabilities. Tools requiring approval are advertised only when a trusted provider is configured. The provider cannot expand name or scope authority.
+
+**Verification evidence:** 214 offline tests passed, including concurrent consumption, cancellation, provider failure, forged public ALLOW, binding, and registry-mutation cases. Ruff lint/format and Pyright passed; `uv lock --check` passed; the approval and V01 offline examples completed. This is a local macOS run only; Windows and hosted CI remain unverified. Package build was not run because `hatchling` is absent from the existing environment and the milestone forbids installing dependencies.
+
+**Boundary:** The store is process-local and non-durable. Consumption occurs before dispatch, so a failed dispatch spends approval; external side effects are not rolled back and exactly-once behavior is not promised. No process isolation, OS sandbox, or protection from hostile in-process Python is provided. The exact commit is recorded in the engineering completion report.

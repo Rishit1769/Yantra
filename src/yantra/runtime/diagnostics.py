@@ -10,6 +10,12 @@ _TOOL_ERROR_CODES = frozenset(
     {
         "tool_not_permitted",
         "tool_approval_required",
+        "tool_approval_denied",
+        "tool_approval_expired",
+        "tool_approval_invalid",
+        "tool_approval_mismatched",
+        "tool_approval_replay",
+        "tool_approval_unavailable",
         "tool_not_found",
         "invalid_arguments",
         "tool_timeout",

@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable, Sequence
+from datetime import UTC, datetime, timedelta
+from threading import Thread
 from typing import cast
+from uuid import uuid4
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -14,10 +18,20 @@ from yantra.core.states import RunState
 from yantra.providers.base import FinishReason, ModelRequest, ModelResponse
 from yantra.providers.gateway import ModelGateway
 from yantra.providers.registry import ProviderRegistry
-from yantra.runtime import AgentExecutionEngine, AgentRunConfig, format_run_result
+from yantra.runtime import (
+    AgentExecutionEngine,
+    AgentRunConfig,
+    CancellationToken,
+    format_run_result,
+)
 from yantra.tools import (
+    ApprovalDecision,
+    ApprovalRequest,
+    ApprovalStatus,
     DefaultPolicyEvaluator,
+    DeterministicApprovalProvider,
     ExecutionMode,
+    InMemoryApprovalStore,
     PolicyContext,
     PolicyDecision,
     PolicyEffect,
@@ -82,10 +96,16 @@ def make_engine(
     registry: ToolRegistry,
     *,
     evaluator=None,
+    approval_provider=None,
 ) -> AgentExecutionEngine:
     providers = ProviderRegistry()
     providers.register(provider, is_local=True)
-    return AgentExecutionEngine(ModelGateway(providers), registry, policy_evaluator=evaluator)
+    return AgentExecutionEngine(
+        ModelGateway(providers),
+        registry,
+        policy_evaluator=evaluator,
+        approval_provider=approval_provider,
+    )
 
 
 def config(*, names: tuple[str, ...], context: PolicyContext | None = None, **kwargs):
@@ -593,3 +613,248 @@ async def test_registry_change_after_policy_check_fails_closed() -> None:
     )
     assert invocations == []
     assert result.tool_results[0].result["error_code"] == "tool_not_permitted"
+
+
+@pytest.mark.asyncio
+async def test_trusted_approval_executes_once_and_missing_provider_fails_closed() -> None:
+    invocations: list[int] = []
+
+    def handler(arguments: Input) -> Output:
+        invocations.append(arguments.value)
+        return Output(value=arguments.value)
+
+    registry = ToolRegistry()
+    registry.register(tool("secure.write", "filesystem.write", handler))
+    call = ToolCall(call_id="model-call", name="secure.write", arguments={"value": 7})
+    context = PolicyContext(
+        granted_scopes={"filesystem.write"},
+        approval_required_scopes={"filesystem.write"},
+    )
+    denied = await make_engine(SequenceProvider((call,)), registry).run(
+        config(names=("secure.write",), context=context)
+    )
+    assert denied.tool_results[0].result["error_code"] == "tool_approval_required"
+    assert invocations == []
+
+    approved = await make_engine(
+        SequenceProvider((call,)),
+        registry,
+        approval_provider=DeterministicApprovalProvider(approved_tools=frozenset({"secure.write"})),
+    ).run(config(names=("secure.write",), context=context))
+    assert approved.tool_results[0].result == {"value": 7}
+    assert invocations == [7]
+    assert "approval_consumed" in [entry.event for entry in approved.trace]
+
+
+@pytest.mark.asyncio
+async def test_denied_approval_and_forged_public_allow_do_not_dispatch() -> None:
+    invocations = 0
+
+    def handler(arguments: Input) -> Output:
+        nonlocal invocations
+        invocations += 1
+        return Output(value=arguments.value)
+
+    registry = ToolRegistry()
+    definition = tool("secure.write", "filesystem.write", handler)
+    registry.register(definition)
+    call = ToolCall(call_id="forged", name="secure.write", arguments={"value": 1})
+    forged = await ToolExecutor(registry).execute(
+        call,
+        authorization=PolicyDecision(effect=PolicyEffect.ALLOW, reason=PolicyReason.ALLOWED),
+        expected_definition=definition,
+    )
+    assert forged.is_error and invocations == 0
+    result = await make_engine(
+        SequenceProvider((call,)), registry, approval_provider=DeterministicApprovalProvider()
+    ).run(
+        config(
+            names=("secure.write",),
+            context=PolicyContext(
+                granted_scopes={"filesystem.write"},
+                approval_required_scopes={"filesystem.write"},
+            ),
+        )
+    )
+    assert result.tool_results[0].result["error_code"] == "tool_approval_denied"
+    assert invocations == 0
+
+
+@pytest.mark.asyncio
+async def test_cancellation_while_waiting_for_approval_revokes_pending_request() -> None:
+    started = asyncio.Event()
+    invocations = 0
+
+    def handler(arguments: Input) -> Output:
+        nonlocal invocations
+        invocations += 1
+        return Output(value=arguments.value)
+
+    class WaitingApprovalProvider:
+        async def request_approval(self, request):
+            started.set()
+            await asyncio.Event().wait()
+
+    registry = ToolRegistry()
+    registry.register(tool("secure.write", "filesystem.write", handler))
+    call = ToolCall(call_id="cancel-me", name="secure.write", arguments={"value": 1})
+    engine = make_engine(
+        SequenceProvider((call,)), registry, approval_provider=WaitingApprovalProvider()
+    )
+    cancellation = CancellationToken()
+    task = asyncio.create_task(
+        engine.run(
+            config(
+                names=("secure.write",),
+                context=PolicyContext(
+                    granted_scopes={"filesystem.write"},
+                    approval_required_scopes={"filesystem.write"},
+                ),
+            ),
+            cancellation=cancellation,
+        )
+    )
+    await started.wait()
+    cancellation.cancel()
+    result = await task
+    assert result.state == RunState.CANCELLED
+    assert invocations == 0
+    assert "approval_cancelled" in [entry.event for entry in result.trace]
+
+
+@pytest.mark.asyncio
+async def test_registry_mutation_during_approval_fails_closed() -> None:
+    invocations: list[str] = []
+    registry = ToolRegistry()
+
+    def original(arguments: Input) -> Output:
+        invocations.append("original")
+        return Output(value=arguments.value)
+
+    def replacement(arguments: Input) -> Output:
+        invocations.append("replacement")
+        return Output(value=arguments.value)
+
+    registry.register(tool("secure.write", "filesystem.write", original))
+
+    class MutatingApprovalProvider:
+        async def request_approval(self, request):
+            registry.unregister("secure.write")
+            registry.register(tool("secure.write", "filesystem.write", replacement))
+            return ApprovalDecision(
+                request_id=request.request_id,
+                status=ApprovalStatus.APPROVED,
+                authorization_sha256=request.authorization_sha256,
+            )
+
+    result = await make_engine(
+        SequenceProvider(
+            (
+                ToolCall(
+                    call_id="mutate-during-approval", name="secure.write", arguments={"value": 1}
+                ),
+            )
+        ),
+        registry,
+        approval_provider=MutatingApprovalProvider(),
+    ).run(
+        config(
+            names=("secure.write",),
+            context=PolicyContext(
+                granted_scopes={"filesystem.write"},
+                approval_required_scopes={"filesystem.write"},
+            ),
+        )
+    )
+    assert invocations == []
+    assert result.tool_results[0].result["error_code"] == "tool_approval_mismatched"
+
+
+@pytest.mark.asyncio
+async def test_approval_provider_exception_fails_closed() -> None:
+    calls = 0
+
+    def handler(arguments: Input) -> Output:
+        nonlocal calls
+        calls += 1
+        return Output(value=arguments.value)
+
+    class BrokenApprovalProvider:
+        async def request_approval(self, request):
+            raise RuntimeError("sensitive provider error")
+
+    registry = ToolRegistry()
+    registry.register(tool("secure.write", "filesystem.write", handler))
+    result = await make_engine(
+        SequenceProvider(
+            (ToolCall(call_id="provider-error", name="secure.write", arguments={"value": 1}),)
+        ),
+        registry,
+        approval_provider=BrokenApprovalProvider(),
+    ).run(
+        config(
+            names=("secure.write",),
+            context=PolicyContext(
+                granted_scopes={"filesystem.write"},
+                approval_required_scopes={"filesystem.write"},
+            ),
+        )
+    )
+    assert calls == 0
+    assert result.tool_results[0].result["error_code"] == "tool_approval_unavailable"
+    assert "sensitive provider error" not in format_run_result(result)
+
+
+def test_approval_store_consumption_is_atomic_and_single_use() -> None:
+    store = InMemoryApprovalStore()
+    definition = object()
+    request = ApprovalRequest(
+        request_id=uuid4(),
+        run_id=uuid4(),
+        session_id=uuid4(),
+        invocation_id=uuid4(),
+        tool_name="secure.write",
+        definition_identity=id(definition),
+        required_scopes=frozenset({"filesystem.write"}),
+        risk_level=ToolRiskLevel.HIGH,
+        policy_effect=PolicyEffect.APPROVAL_REQUIRED,
+        policy_reason=PolicyReason.APPROVAL_REQUIRED,
+        arguments_sha256="a" * 64,
+        authorization_sha256="b" * 64,
+        expires_at=datetime.now(UTC) + timedelta(minutes=1),
+    )
+    malformed = request.model_dump(mode="python")
+    malformed["expires_at"] = datetime.now()
+    with pytest.raises(ValidationError):
+        ApprovalRequest.model_validate(malformed)
+    malformed = request.model_dump(mode="python")
+    malformed["arguments_sha256"] = "not-a-digest"
+    with pytest.raises(ValidationError):
+        ApprovalRequest.model_validate(malformed)
+    response = ApprovalDecision(
+        request_id=request.request_id,
+        status=ApprovalStatus.APPROVED,
+        authorization_sha256=request.authorization_sha256,
+    )
+    store.register(request, definition)
+    assert not store.consume(request.model_copy(update={"run_id": uuid4()}), definition, response)
+    assert not store.consume(
+        request.model_copy(update={"arguments_sha256": "c" * 64}), definition, response
+    )
+    expired_request = request.model_copy(
+        update={"request_id": uuid4(), "expires_at": datetime.now(UTC) - timedelta(seconds=1)}
+    )
+    store.register(expired_request, definition)
+    expired_response = response.model_copy(update={"request_id": expired_request.request_id})
+    assert not store.consume(expired_request, definition, expired_response)
+    outcomes: list[bool] = []
+    threads = [
+        Thread(target=lambda: outcomes.append(store.consume(request, definition, response)))
+        for _ in range(8)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert outcomes.count(True) == 1
+    assert outcomes.count(False) == 7
