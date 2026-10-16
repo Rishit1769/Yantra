@@ -91,9 +91,13 @@ fabricating accounting values.
 Await `engine.run(config)` to receive the immutable result. Check
 `termination_reason` and `error_code` instead of treating every non-exceptional
 return as success. `format_run_result(result)` provides a concise summary and
-trace for developer display, including recognized safe tool error categories;
-it omits payloads and exception text. Inspect typed `steps`, `tool_results`,
-`usage`, and `trace` fields when application logic needs structured data.
+trace for developer display. Tool events use local `tool[n]` indices rather
+than raw model-supplied names or call IDs; recognized safe error categories
+remain visible while payloads and exception text are omitted. Structured
+`tool_results` retain IDs for correlation. Reported cost, including zero,
+takes precedence over an estimate; missing cost remains unknown. Inspect typed
+`steps`, `tool_results`, `usage`, and `trace` fields when application logic
+needs structured data.
 
 For explicit cooperative cancellation, pass a `CancellationToken` and call
 `cancel()` from the owning task:

@@ -117,10 +117,12 @@ work uses a worker thread and cannot be forcibly stopped by asyncio
 cancellation. The engine does not add shell, filesystem, browser, MCP,
 persistence, or authorization-policy capabilities. See [agent execution engine](../architecture/agent-execution-engine.md).
 `yantra.runtime.format_run_result(result)` formats the summary and sanitized
-trace for display without including conversation bodies, tool arguments,
-result payloads, exception text, or provider reasoning. Recognized structured
-tool error categories are shown; malformed or unrecognized categories are
-omitted. The complete deterministic example is in the [agent runtime
+trace for display without including conversation bodies, raw model-supplied
+tool names or call IDs, tool arguments, result payloads, exception text, or
+provider reasoning. Tool results use local `tool[n]` indices. Recognized
+structured error categories are shown; malformed or unrecognized categories
+are omitted. Structured result and trace objects retain correlation IDs. The
+complete deterministic example is in the [agent runtime
 quickstart](../guides/agent-quickstart.md).
 
 ## Limitations

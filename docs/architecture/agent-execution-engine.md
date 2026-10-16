@@ -136,11 +136,15 @@ still exceed the configured total. Actual usage is accounted only after the
 response. Missing usage with a configured token budget fails closed before any
 subsequent tool or model work, without inventing values.
 
-Cost budgets are also post-response accounting guards. Gateway routing policy
-may independently preflight a request when its configured pricing and token
-bounds are available; the agent runtime does not create a second pricing
-engine, estimate prompt tokens, or guarantee a per-run monetary ceiling. A
-known response cost at or above the configured budget prevents further work;
+Cost budgets are also post-response accounting guards. A non-`None`
+provider-reported cost takes precedence over the gateway estimate, including a
+reported `Decimal("0")`; the estimate is used only when reported cost is
+`None`. If both are unavailable, cost remains unknown. Cumulative costs are
+added as `Decimal` values. Gateway routing policy may independently preflight
+a request when its configured pricing and token bounds are available; the
+agent runtime does not create a second pricing engine, estimate prompt tokens,
+or guarantee a per-run monetary ceiling. A known response cost at or above
+the configured budget prevents further work;
 unknown cost with a configured cost budget fails closed after that response.
 Consequently, a single admitted request may incur more than the per-run budget
 before the runtime can observe and stop it. `cost_budget_enforced` indicates
@@ -148,15 +152,20 @@ that known cost was checked to stop further execution, not that billing was
 strictly capped. Without a configured cost budget, unknown cost remains
 unknown.
 
-Diagnostics show only recognized structured tool error categories (`tool_not_permitted`,
+Human-readable diagnostics intentionally omit model-supplied tool names and
+call IDs, using local `tool[n]` indices to retain tool-result order and status.
+Recognized structured tool error categories (`tool_not_permitted`,
 `tool_not_found`, `invalid_arguments`, `tool_timeout`, `invalid_output`, and
-`tool_exception`). Missing or unrecognized categories are omitted; raw result
-payloads and exception messages are never formatted.
+`tool_exception`) remain visible; missing or unrecognized categories, raw
+result payloads, and exception messages are omitted. This is a sanitized
+summary, not a raw execution dump. Structured `tool_results` and trace records
+retain identifiers needed for correlation.
 
-Trace entries contain state/event metadata, step number, tool name/call ID,
-outcome, and known usage. They intentionally exclude tool arguments, full
-conversation payloads, credentials, authorization headers, and provider
-reasoning metadata.
+Structured trace entries contain state/event metadata, step number, tool
+name/call ID, outcome, and known usage. The human-readable formatter omits
+model-supplied names and IDs. Trace entries intentionally exclude tool
+arguments, full conversation payloads, credentials, authorization headers,
+and provider reasoning metadata.
 
 ## Verification boundary
 

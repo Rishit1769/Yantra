@@ -16,6 +16,7 @@ from yantra.core.messages import Message, MessageRole, TextContent, ToolCall
 from yantra.core.states import RunState
 from yantra.providers.adapters.common import chat_request_messages
 from yantra.providers.base import FinishReason, ModelRequest, ModelResponse
+from yantra.providers.catalog import ModelCatalogEntry, ModelPricing
 from yantra.providers.gateway import ModelGateway
 from yantra.providers.registry import ProviderRegistry
 from yantra.runtime import (
@@ -23,6 +24,7 @@ from yantra.runtime import (
     AgentRunConfig,
     AgentTerminationReason,
     CancellationToken,
+    format_run_result,
 )
 from yantra.tools import ExecutionMode, SideEffect, ToolDefinition, ToolRegistry
 
@@ -1025,6 +1027,189 @@ async def test_cost_budget_fails_closed_when_gateway_cost_is_unknown() -> None:
     assert result.error_code == "cost_budget_unverifiable"
     assert result.total_cost_usd is None
     assert not result.cost_budget_enforced
+
+
+@pytest.mark.asyncio
+async def test_reported_zero_cost_is_known_and_completes() -> None:
+    provider = SequenceProvider(
+        [
+            lambda request: text_response(
+                request,
+                "free",
+                TokenUsage(
+                    input_tokens=1,
+                    output_tokens=1,
+                    total_tokens=2,
+                    provider_reported_cost_usd=Decimal("0"),
+                ),
+            )
+        ]
+    )
+    result = await engine_for(provider).run(
+        AgentRunConfig(
+            model="test/model",
+            messages=(user_message(),),
+            cost_budget_usd=Decimal("0.01"),
+        )
+    )
+
+    assert result.termination_reason == AgentTerminationReason.FINAL_RESPONSE
+    assert result.total_cost_usd == Decimal("0")
+    assert result.cost_budget_enforced
+
+
+@pytest.mark.asyncio
+async def test_reported_zero_cost_takes_precedence_over_gateway_estimate() -> None:
+    class PricedProvider(SequenceProvider):
+        async def list_models(self) -> tuple[ModelCatalogEntry, ...]:
+            return (
+                ModelCatalogEntry(
+                    provider_id="test",
+                    model_id="model",
+                    pricing=ModelPricing(
+                        input_usd_per_million=Decimal("1000000"),
+                        output_usd_per_million=Decimal("1000000"),
+                    ),
+                ),
+            )
+
+    provider = PricedProvider(
+        [
+            lambda request: text_response(
+                request,
+                "reported free",
+                TokenUsage(
+                    input_tokens=1,
+                    output_tokens=1,
+                    total_tokens=2,
+                    provider_reported_cost_usd=Decimal("0"),
+                ),
+            )
+        ]
+    )
+    registry = ProviderRegistry()
+    registry.register(provider, is_local=True)
+    gateway = ModelGateway(registry)
+    await gateway.catalog.list_models("test")
+    result = await AgentExecutionEngine(gateway, ToolRegistry()).run(
+        AgentRunConfig(model="test/model", messages=(user_message(),))
+    )
+
+    assert result.steps[0].estimated_cost_usd == Decimal("2")
+    assert result.steps[0].provider_reported_cost_usd == Decimal("0")
+    assert result.total_cost_usd == Decimal("0")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("reported", "rate", "expected"),
+    [
+        (None, Decimal("1000000"), Decimal("2")),
+        (None, Decimal("0"), Decimal("0")),
+        (Decimal("0.25"), Decimal("1000000"), Decimal("0.25")),
+    ],
+)
+async def test_gateway_cost_precedence_and_zero_estimate(
+    reported: Decimal | None, rate: Decimal, expected: Decimal
+) -> None:
+    class PricedProvider(SequenceProvider):
+        async def list_models(self) -> tuple[ModelCatalogEntry, ...]:
+            return (
+                ModelCatalogEntry(
+                    provider_id="test",
+                    model_id="model",
+                    pricing=ModelPricing(
+                        input_usd_per_million=rate,
+                        output_usd_per_million=rate,
+                    ),
+                ),
+            )
+
+    provider = PricedProvider(
+        [
+            lambda request: text_response(
+                request,
+                "cost checked",
+                TokenUsage(
+                    input_tokens=1,
+                    output_tokens=1,
+                    total_tokens=2,
+                    provider_reported_cost_usd=reported,
+                ),
+            )
+        ]
+    )
+    registry = ProviderRegistry()
+    registry.register(provider, is_local=True)
+    gateway = ModelGateway(registry)
+    await gateway.catalog.list_models("test")
+    result = await AgentExecutionEngine(gateway, ToolRegistry()).run(
+        AgentRunConfig(model="test/model", messages=(user_message(),))
+    )
+
+    assert result.total_cost_usd == expected
+
+
+@pytest.mark.asyncio
+async def test_cost_accounting_preserves_decimal_cumulative_cost_and_stops_at_budget() -> None:
+    def priced_tool_turn(cost: str):
+        return lambda request: tool_response(
+            request,
+            (ToolCall(call_id=f"call-{cost}", name="demo.echo", arguments={"text": "x"}),),
+            TokenUsage(
+                input_tokens=1,
+                output_tokens=1,
+                total_tokens=2,
+                provider_reported_cost_usd=Decimal(cost),
+            ),
+        )
+
+    provider = SequenceProvider(
+        [priced_tool_turn("0"), priced_tool_turn("0.10"), priced_tool_turn("0.20")]
+    )
+    result = await engine_for(provider, echo_registry()).run(
+        AgentRunConfig(
+            model="test/model",
+            messages=(user_message(),),
+            max_steps=4,
+            max_tool_calls=4,
+            tool_names=("demo.echo",),
+            cost_budget_usd=Decimal("0.30"),
+        )
+    )
+
+    assert result.termination_reason == AgentTerminationReason.COST_BUDGET
+    assert result.error_code == "cost_budget_exhausted"
+    assert result.total_cost_usd == Decimal("0.30")
+    assert len(provider.requests) == 3
+    assert len(result.tool_results) == 2
+
+
+@pytest.mark.asyncio
+async def test_untrusted_tool_identifiers_remain_structured_but_are_not_formatted() -> None:
+    call_id = "sk-synthetic-call-canary"
+    tool_name = "Bearer synthetic-tool-canary"
+    provider = SequenceProvider(
+        [
+            lambda request: tool_response(
+                request,
+                (ToolCall(call_id=call_id, name=tool_name, arguments={"private": "payload"}),),
+            ),
+            lambda request: text_response(request, "proposal handled"),
+        ]
+    )
+    result = await engine_for(provider).run(
+        AgentRunConfig(model="test/model", messages=(user_message(),))
+    )
+    formatted = format_run_result(result)
+
+    assert result.tool_results[0].call_id == call_id
+    assert result.tool_results[0].name == tool_name
+    assert result.trace[6].call_id == call_id
+    assert result.trace[6].tool_name == tool_name
+    assert call_id not in formatted
+    assert tool_name not in formatted
+    assert "tool[1]: error (tool_not_permitted)" in formatted
 
 
 @pytest.mark.asyncio

@@ -66,15 +66,15 @@ def test_runtime_diagnostics_report_failure_and_unknown_usage_safely() -> None:
     assert "12 + 8 = 20" not in output
 
 
-def test_runtime_diagnostics_redact_untrusted_trace_labels() -> None:
+def test_runtime_diagnostics_omit_untrusted_identifiers_and_private_metadata() -> None:
     import asyncio
 
     result, _ = asyncio.run(load_demo()())
     original = result.trace[0]
     trace = original.model_copy(
         update={
-            "tool_name": "calculator api_key=synthetic-secret\nforged",
-            "call_id": "Bearer abc.def",
+            "tool_name": "sk-synthetic-tool-key\nforged-工具",
+            "call_id": "Bearer synthetic-call-token\n" + ("x" * 100),
         }
     )
     private_message = result.steps[0].response_message.model_copy(
@@ -88,11 +88,13 @@ def test_runtime_diagnostics_redact_untrusted_trace_labels() -> None:
     changed = AgentRunResult.model_validate(payload | {"trace": (trace, *result.trace[1:])})
     output = format_run_result(changed)
 
-    assert "synthetic-secret" not in output
-    assert "abc.def" not in output
-    assert "[REDACTED]" in output
-    assert "\nforged" not in output
+    assert "sk-synthetic-tool-key" not in output
+    assert "forged-工具" not in output
+    assert "synthetic-call-token" not in output
+    assert "x" * 100 not in output
+    assert "tool[1]" in output
     assert "private-canary" not in output
+    assert output == format_run_result(changed)
 
 
 def test_runtime_diagnostics_show_only_allowlisted_tool_error_categories() -> None:
@@ -102,18 +104,18 @@ def test_runtime_diagnostics_show_only_allowlisted_tool_error_categories() -> No
     payload = result.model_dump()
     payload["tool_results"] = (
         {
-            "call_id": "bad-args",
-            "name": "calculator.add",
+            "call_id": "sk-synthetic-call-secret",
+            "name": "sk-synthetic-name-secret",
             "result": {
                 "error_code": "invalid_arguments",
-                "message": "api_key=synthetic-error-secret",
+                "message": "Authorization: Bearer synthetic-payload-token",
                 "arguments": {"private": "synthetic-argument-secret"},
             },
             "is_error": True,
         },
         *(
             {
-                "call_id": code,
+                "call_id": f"ordinary-{code}",
                 "name": "calculator.add",
                 "result": {"error_code": code, "message": "private exception text"},
                 "is_error": True,
@@ -121,25 +123,25 @@ def test_runtime_diagnostics_show_only_allowlisted_tool_error_categories() -> No
             for code in ("tool_not_found", "tool_timeout", "invalid_output", "tool_exception")
         ),
         {
-            "call_id": "missing-category",
+            "call_id": "Bearer synthetic-missing-category-token",
             "name": "calculator.add",
             "result": {"message": "secret should not be displayed"},
             "is_error": True,
         },
         {
-            "call_id": "malformed-payload",
+            "call_id": "ordinary-malformed-payload",
             "name": "calculator.add",
             "result": "untrusted raw error payload",
             "is_error": True,
         },
         {
-            "call_id": "successful",
+            "call_id": "ordinary-successful",
             "name": "calculator.add",
             "result": {"total": 20},
             "is_error": False,
         },
         {
-            "call_id": "malformed",
+            "call_id": "ordinary-unknown-category",
             "name": "calculator.add",
             "result": {"error_code": "attacker-controlled-category"},
             "is_error": True,
@@ -152,11 +154,15 @@ def test_runtime_diagnostics_show_only_allowlisted_tool_error_categories() -> No
     assert "error (tool_timeout)" in output
     assert "error (invalid_output)" in output
     assert "error (tool_exception)" in output
-    assert "successful]: success" in output
-    assert "missing-category]: error" in output
-    assert "malformed-payload]: error" in output
+    assert "tool[8]: success" in output
+    assert "tool[6]: error" in output
+    assert "tool[7]: error" in output
     assert "attacker-controlled-category" not in output
-    assert "synthetic-error-secret" not in output
+    assert "synthetic-payload-token" not in output
+    assert "sk-synthetic-call-secret" not in output
+    assert "sk-synthetic-name-secret" not in output
+    assert "calculator.add" not in output
+    assert "ordinary-successful" not in output
     assert "synthetic-argument-secret" not in output
     assert "private exception text" not in output
     assert "secret should not be displayed" not in output

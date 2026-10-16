@@ -186,9 +186,9 @@ class AgentExecutionEngine:
                     total_usage = None
                 else:
                     total_usage = self._add_usage(total_usage, response.usage)
-                response_cost = (
-                    gateway_result.provider_reported_cost_usd or gateway_result.estimated_cost_usd
-                )
+                response_cost = gateway_result.provider_reported_cost_usd
+                if response_cost is None:
+                    response_cost = gateway_result.estimated_cost_usd
                 if response_cost is None:
                     cost_known = False
                 elif cost_known:

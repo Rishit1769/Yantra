@@ -2,16 +2,10 @@
 
 from __future__ import annotations
 
-import re
 from typing import cast
 
 from yantra.runtime.models import AgentRunResult
 
-_SECRET_ASSIGNMENT = re.compile(
-    r"(?i)(\b(?:api[_-]?key|access[_-]?token|password|secret|authorization)\b\s*[:=]\s*)"
-    r"([^\s,;]+)"
-)
-_BEARER = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+")
 _TOOL_ERROR_CODES = frozenset(
     {
         "tool_not_permitted",
@@ -22,12 +16,32 @@ _TOOL_ERROR_CODES = frozenset(
         "tool_exception",
     }
 )
-
-
-def _safe_label(value: str) -> str:
-    value = _SECRET_ASSIGNMENT.sub(r"\1[REDACTED]", value)
-    value = _BEARER.sub("Bearer [REDACTED]", value)
-    return value.replace("\r", "\\r").replace("\n", "\\n")[:256]
+_RUN_ERROR_CODES = frozenset(
+    {
+        *_TOOL_ERROR_CODES,
+        "provider_authentication_error",
+        "provider_authorization_error",
+        "provider_credential_error",
+        "provider_invalid_request",
+        "provider_model_unavailable",
+        "provider_network_error",
+        "provider_error",
+        "provider_protocol_error",
+        "provider_quota_exceeded",
+        "provider_rate_limited",
+        "provider_timeout",
+        "provider_unavailable",
+        "invalid_response",
+        "cost_budget_exhausted",
+        "cost_budget_unverifiable",
+        "duplicate_tool_call_id",
+        "max_steps",
+        "run_timeout",
+        "token_budget_exhausted",
+        "token_budget_unverifiable",
+        "tool_budget_exhausted",
+    }
+)
 
 
 def format_run_result(result: AgentRunResult) -> str:
@@ -40,13 +54,11 @@ def format_run_result(result: AgentRunResult) -> str:
     ]
     if result.tool_results:
         lines.append("Tools:")
-        for item in result.tool_results:
+        for index, item in enumerate(result.tool_results, start=1):
             status = "error" if item.is_error else "success"
             category = _tool_error_category(item.result) if item.is_error else None
             suffix = f" ({category})" if category else ""
-            lines.append(
-                f"- {_safe_label(item.name)} [{_safe_label(item.call_id)}]: {status}{suffix}"
-            )
+            lines.append(f"- tool[{index}]: {status}{suffix}")
     if result.usage_complete and result.usage is not None:
         lines.append(
             "Token usage: "
@@ -59,19 +71,15 @@ def format_run_result(result: AgentRunResult) -> str:
         lines.append("Cost: unavailable")
     else:
         lines.append(f"Cost: ${result.total_cost_usd:.6f} USD")
-    if result.error_code:
-        lines.append(f"Error category: {_safe_label(result.error_code)}")
+    if result.error_code in _RUN_ERROR_CODES:
+        lines.append(f"Error category: {result.error_code}")
     lines.append("Trace:")
     for entry in result.trace:
         details = [entry.event, entry.state.value]
-        if entry.outcome:
-            details.append(f"outcome={_safe_label(entry.outcome)}")
-        if entry.tool_name:
-            details.append(f"tool={_safe_label(entry.tool_name)}")
-        if entry.call_id:
-            details.append(f"call_id={_safe_label(entry.call_id)}")
-        if entry.error_code:
-            details.append(f"error={_safe_label(entry.error_code)}")
+        if entry.outcome in {"tool_calls", "text", "success", "error"}:
+            details.append(f"outcome={entry.outcome}")
+        if entry.error_code in _RUN_ERROR_CODES:
+            details.append(f"error={entry.error_code}")
         lines.append(f"{entry.sequence}. " + " | ".join(details))
     return "\n".join(lines)
 
