@@ -12,6 +12,8 @@ from pydantic import ValidationError as PydanticValidationError
 
 from yantra.core.errors import ToolValidationError
 from yantra.core.tools_schema import ProviderToolSchema
+from yantra.tools.execution import ToolExecutionBoundaryMode
+from yantra.tools.policy import PermissionScope, ToolRiskLevel
 
 
 class ExecutionMode(StrEnum):
@@ -40,34 +42,37 @@ class ToolDefinition(BaseModel):
     description: str = Field(default="", max_length=2000)
     input_model: type[BaseModel]
     output_model: type[BaseModel] | None = None
-    executor: Callable[..., Any]
-    execution_mode: ExecutionMode
-    permission_scopes: frozenset[str] = frozenset()
+    executor: Callable[..., Any] | None = None
+    execution_mode: ExecutionMode = ExecutionMode.SYNC
+    execution_boundary: ToolExecutionBoundaryMode = ToolExecutionBoundaryMode.IN_PROCESS
+    worker_handler_id: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_.-]{0,127}$")
+    permission_scopes: frozenset[PermissionScope] = frozenset()
+    risk_level: ToolRiskLevel = ToolRiskLevel.LOW
     side_effect: SideEffect = SideEffect.UNKNOWN
     timeout_seconds: float | None = Field(default=None, gt=0, allow_inf_nan=False)
 
-    @field_validator("permission_scopes")
-    @classmethod
-    def permission_scopes_are_valid(cls, values: frozenset[str]) -> frozenset[str]:
-        if any(not value.strip() for value in values):
-            raise ValueError("permission scopes must be non-empty")
-        return values
-
     @field_validator("executor")
     @classmethod
-    def executor_is_callable(cls, value: Callable[..., Any]) -> Callable[..., Any]:
-        if not callable(value):
+    def executor_is_callable(cls, value: Callable[..., Any] | None) -> Callable[..., Any] | None:
+        if value is not None and not callable(value):
             raise ValueError("executor must be callable")
         return value
 
     @model_validator(mode="after")
     def schemas_and_execution_mode_are_consistent(self) -> ToolDefinition:
-        call_method = type(self.executor).__call__
-        is_async = inspect.iscoroutinefunction(self.executor) or inspect.iscoroutinefunction(
-            call_method
-        )
-        if (self.execution_mode == ExecutionMode.ASYNC) != is_async:
-            raise ValueError("execution_mode must match the executor's sync/async callable type")
+        if self.execution_boundary == ToolExecutionBoundaryMode.IN_PROCESS:
+            if self.executor is None or self.worker_handler_id is not None:
+                raise ValueError("in-process tools require an executor and no worker handler ID")
+            call_method = type(self.executor).__call__
+            is_async = inspect.iscoroutinefunction(self.executor) or inspect.iscoroutinefunction(
+                call_method
+            )
+            if (self.execution_mode == ExecutionMode.ASYNC) != is_async:
+                raise ValueError(
+                    "execution_mode must match the executor's sync/async callable type"
+                )
+        elif self.executor is not None or self.worker_handler_id is None:
+            raise ValueError("subprocess tools require a worker handler ID and no local executor")
         self.input_model.model_json_schema()
         if self.output_model is not None:
             self.output_model.model_json_schema()

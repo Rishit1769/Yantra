@@ -36,6 +36,9 @@ Typed contracts, provider gateway, policy/tool interfaces.
 ## Priority
 P0.
 ## Implementation status
-In Development. YANTRA-001 implements agent/budget/state/result contracts and transition validation; the execution loop, scheduler, persistence integration, policy engine, and recovery are not implemented.
+YANTRA-003 implements a bounded local execution loop. YANTRA-004-V01 adds
+focused logical tool-scope enforcement; a general scheduler, persistence
+integration, approval workflow, OS sandbox, and durable recovery are not
+implemented.
 ## Open questions
 Identifier format, public stream backpressure API, and whether run resume creates a linked new run or recovery attempt.
