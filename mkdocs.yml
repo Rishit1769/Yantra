@@ -16,6 +16,7 @@ nav:
       - Introduction: getting-started/introduction.md
       - Installation: getting-started/installation.md
       - Quickstart: getting-started/quickstart.md
+      - Agent runtime quickstart: guides/agent-quickstart.md
       - Configuration: getting-started/configuration.md
       - First agent: getting-started/first-agent.md
   - Core API: specifications/core-runtime-api.md

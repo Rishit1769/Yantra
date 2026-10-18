@@ -39,3 +39,11 @@ sequenceDiagram
 ```
 
 See [runtime kernel](runtime-kernel.md), [state machine](state-machine.md), [cancellation](../reliability/cancellation.md), and [crash recovery](../reliability/crash-recovery.md).
+
+For tools, authorization and any required trusted approval complete in the parent
+before dispatch. The default trusted in-process handler preserves compatibility;
+an explicitly registered fixed-handler subprocess uses bounded versioned JSON
+and is terminated/reaped on timeout or cancellation. Process separation is not
+OS sandboxing, and terminating a direct worker does not undo side effects or
+guarantee termination of descendants. See [tool execution boundaries](tool-engine.md)
+and the [security boundary review](../security/secure-tool-runtime.md).

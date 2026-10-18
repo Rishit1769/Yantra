@@ -8,7 +8,9 @@ from yantra.core.errors import (
     ToolNotFoundError,
 )
 from yantra.core.tools_schema import ProviderToolSchema
+from yantra.tools._worker import WORKER_HANDLER_IDS
 from yantra.tools.base import ToolDefinition
+from yantra.tools.execution import ToolExecutionBoundaryMode
 
 
 class ToolRegistry:
@@ -21,6 +23,13 @@ class ToolRegistry:
         """Validate and register one tool, rejecting duplicate names."""
         if tool.name in self._tools:
             raise DuplicateToolError(f"tool {tool.name!r} is already registered")
+        if (
+            tool.execution_boundary == ToolExecutionBoundaryMode.SUBPROCESS
+            and tool.worker_handler_id not in WORKER_HANDLER_IDS
+        ):
+            raise InvalidToolDefinitionError(
+                "tool references an unregistered trusted worker handler"
+            )
         try:
             tool.input_model.model_json_schema()
             if tool.output_model is not None:
