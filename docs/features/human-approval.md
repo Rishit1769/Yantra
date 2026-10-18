@@ -1,5 +1,10 @@
 # Human Approval
 
+This specification describes the broader durable, authenticated human-review
+workflow and notification integration, which remains proposed. YANTRA-004
+implements a narrower host-injected, invocation-bound `ApprovalProvider` and
+process-local approval store; see the [secure tool runtime guide](../security/secure-tool-runtime.md).
+
 ## Overview
 Suspends a run for a human decision before a policy-designated action.
 ## Motivation

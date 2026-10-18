@@ -7,5 +7,5 @@ engine](../architecture/agent-execution-engine.md) for lifecycle and safety
 semantics.
 
 The deterministic offline tests use provider fixtures to cover final text,
-sequential tool calls, failures, bounds, usage, and cancellation. The engine
-is experimental and not included in the `0.2.0` release candidate.
+sequential tool calls, failures, bounds, usage, and cancellation. The API is
+experimental and pre-1.0; it is present in the unreleased `0.2.0` candidate.

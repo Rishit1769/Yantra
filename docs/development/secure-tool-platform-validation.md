@@ -2,8 +2,13 @@
 
 This procedure validates the actual subprocess lifecycle on a target OS. A
 platform marker or mocked process object is not a substitute for running the
-worker. Current local evidence is macOS with Python 3.12; Windows and Python
-3.13/3.14 remain pending. Hosted CI is not part of this procedure.
+worker. The complete hosted CI matrix passed on 2026-10-18 (run
+[39114896871](https://github.com/Rishit1769/Yantra/actions/runs/39114896871),
+commit `2f07ec9`) on Ubuntu, macOS, and Windows with Python 3.12, 3.13, and
+3.14. RR-004 also reran the full suite locally on macOS/Python 3.12–3.14.
+The procedure below remains useful for a manual, focused lifecycle check on a
+different Windows/macOS system or Python configuration; it is not evidence of
+descendant cleanup or OS sandboxing.
 
 ## Windows
 

@@ -2,10 +2,16 @@
 
 All dates are intentionally omitted; sequence depends on maintainers, funding, and implementation evidence. Completion of a checklist is not equivalent to production readiness.
 
+The detailed milestone entries below preserve their original point-in-time
+status and validation counts. They are historical records, not current release
+status; the superseding [RR-004 audit](../development/yantra-release-readiness-rr004.md)
+records the current API, package, Python-version, hosted-CI, and release-gate
+evidence without rewriting those milestone histories.
+
 ## Phase 1 — Foundation
 - Dependencies: repository governance and license decision; API review.
 - Deliverables: package structure, typed contracts, model gateway with one conformance-tested adapter, agent runtime/state machine, tool registry/policy, basic tracing, CLI, unit/property tests.
-- Current progress: YANTRA-001 implements packaging, contracts, mock provider, tool registry, state transitions, events, in-memory storage, logging, tests, and CI configuration. YANTRA-002 adds the model gateway and provider adapters with mocked HTTP coverage; YANTRA-002-V01 adds a limited developer smoke CLI. YANTRA-003 provides an experimental bounded local agent loop and a deny-by-default per-run tool-name allowlist; a general scope/policy engine, live provider compatibility, tracing backend, general-purpose CLI, and hosted cross-platform CI execution remain unverified or unimplemented.
+- Current progress: YANTRA-001 implements packaging, contracts, mock provider, tool registry, state transitions, events, in-memory storage, logging, tests, and CI configuration. YANTRA-002 adds the model gateway and provider adapters with mocked HTTP coverage; YANTRA-002-V01 adds a limited developer smoke CLI. YANTRA-003 provides a bounded local agent loop and per-run tool-name allowlist. YANTRA-004 adds focused scope policy, trusted approvals, and a restricted worker subprocess. The general-purpose CLI, persistence, tracing backend, and live provider compatibility remain unimplemented or unverified. RR-003's hosted cross-platform matrix passed; RR-004 records current release evidence.
 - Acceptance: clean artifact build/install; Python 3.12 support; legal/illegal state tests; denied tools never execute; provider capability mismatch fails clearly; secret canary absent from telemetry; runnable documented quickstart verified.
 - Release gate: API/status review and dependency/security scan. Alpha only; no production claim.
 

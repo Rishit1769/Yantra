@@ -23,6 +23,17 @@ It performs a complete two-model-step tool cycle, makes no provider request,
 does not resolve credentials, and is repository-only (examples are not included
 in the wheel or source distribution).
 
+Expected final-answer line:
+
+```text
+Final answer: 12 + 8 = 20. The sum is 20.
+```
+
+This source-checkout example is also the recommended first run while `0.2.0`
+remains an unpublished candidate. The public API can additionally be used from
+a clean wheel/sdist installation; RR-004 records an external consumer test
+that completed the same model-tool-model cycle outside the repository.
+
 The output includes a visible final answer followed by structured diagnostics.
 It reports the state, termination reason, model/tool counts, tool names and
 call IDs, known usage/cost, error category where present, and trace event order.
@@ -135,10 +146,19 @@ wall-clock deadlines, cooperative cancellation, normalized gateway failures,
 partial-progress results, and sanitized traces. Configured token/cost budgets
 fail closed when the required accounting information is unavailable.
 
-The runtime now provides the focused logical tool policy described above, but
-not a general-purpose policy language, approval workflow, or OS sandbox. It
-also does not provide persistence, durable
+The runtime provides the focused logical tool policy described above and
+supports trusted, host-injected approval providers for calls requiring
+approval; see the [secure tool runtime guide](../security/secure-tool-runtime.md)
+for approval binding, expiry, cancellation, and process-local replay limits.
+It does not provide a general-purpose policy language or OS sandbox. It also
+does not provide persistence, durable
 recovery, exactly-once side effects, shell/filesystem/browser/network tools,
 MCP, multi-agent execution, or production guarantees. Provider tool support
 depends on the selected model and is not established by this offline example.
-Windows/Linux and hosted CI execution have not been verified here.
+
+The complete hosted CI matrix passed on 2026-10-18 for Ubuntu, macOS, and
+Windows with Python 3.12, 3.13, and 3.14 (RR-003 run
+[39114896871](https://github.com/Rishit1769/Yantra/actions/runs/39114896871),
+commit `2f07ec9`). This is hosted test/build evidence, not a guarantee for every
+Windows configuration or a claim of OS sandboxing. RR-004's fresh local tests
+ran on macOS/Python 3.12, 3.13, and 3.14.

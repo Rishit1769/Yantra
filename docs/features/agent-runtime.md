@@ -36,9 +36,13 @@ Typed contracts, provider gateway, policy/tool interfaces.
 ## Priority
 P0.
 ## Implementation status
-YANTRA-003 implements a bounded local execution loop. YANTRA-004-V01 adds
-focused logical tool-scope enforcement; a general scheduler, persistence
-integration, approval workflow, OS sandbox, and durable recovery are not
-implemented.
+YANTRA-003 implements a bounded local execution loop. YANTRA-004-V01–V05 add
+focused logical tool-scope enforcement, host-injected trusted approvals,
+engine-bound dispatch authorization, and an opt-in fixed-handler worker
+subprocess. These features are covered by offline tests and examples; they do
+not provide a general scheduler, persistence integration, general-purpose
+policy language, OS sandbox, or durable recovery. See the current
+[RR-004 release-readiness audit](../development/yantra-release-readiness-rr004.md)
+for packaging, API-consumer, and cross-platform evidence.
 ## Open questions
 Identifier format, public stream backpressure API, and whether run resume creates a linked new run or recovery attempt.
