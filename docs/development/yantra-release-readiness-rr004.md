@@ -4,8 +4,7 @@
 
 **Package version:** `0.2.0` (unreleased candidate; version unchanged)
 
-**Recommendation:** **NO-GO for the developer-preview release from this audit branch.**
-**Reason:** The final RR-004 commit, including new gateway retry regression tests, has not run the required nine-job hosted CI matrix. RR-003's immediately preceding implementation passed that matrix, but it is not a result for this candidate commit. No push or CI trigger was authorized or performed.
+**Recommendation:** **TECHNICAL GO for RR-004 engineering acceptance**, based on the exact-SHA CI and dependency-audit evidence supplied for final closure below. GitHub could not be reached from this Codex session for independent live revalidation; no new workflow was triggered in this session.
 
 This recommendation is an evidence-based release gate, not a statement that
 the code is unsafe or that publication has been authorized. No unresolved
@@ -256,9 +255,37 @@ Ubuntu/macOS/Windows × Python 3.12/3.13/3.14 jobs succeeded. The workflow's
 test, wheel/sdist build, installed-wheel CLI checks, and Ubuntu/Python 3.12
 sdist CLI checks passed in their applicable jobs; lint/type/audit ran on
 Ubuntu/Python 3.12. RR-004's four new gateway tests and documentation changes
-are not present in that run. Hosted CI for the final RR-004 commit: **NOT
-RUN**. A new result requires a remote push/trigger, which was outside the
-authorization granted for this task.
+are not present in that run. The subsequent final RR-004 evidence is recorded
+below.
+
+### Final RR-004 CI and dependency-audit evidence
+
+The final closure brief supplied two successful workflow records for commit
+`5a89991ebd3c46c9478fb10849ae7db736becd85`:
+
+| Workflow | Supplied result | Coverage |
+|---|---|---|
+| [Push workflow, run 39122672600](https://github.com/Rishit1769/Yantra/actions/runs/39122672600) | **success, 9/9 jobs** | Ubuntu, macOS, Windows × Python 3.12, 3.13, 3.14 |
+| [Pull-request workflow, run 39122682064](https://github.com/Rishit1769/Yantra/actions/runs/39122682064) | **success, 9/9 jobs** | Ubuntu, macOS, Windows × Python 3.12, 3.13, 3.14 |
+
+The supplied evidence states both run heads matched that SHA, for 18 successful
+matrix jobs total and zero failed, cancelled, skipped, or pending checks. The
+closure brief also reports two successful `uv audit --locked` runs: 34
+packages audited, no known vulnerabilities or adverse project statuses.
+
+These are records supplied for this closure, not live queries performed in
+this session. `gh auth status` reports an invalid token; `gh pr view 4` could
+not connect to `api.github.com`, and the independent run URLs could not be
+fetched. This session did rerun the full 233-test suite, Ruff lint and format
+checks, Pyright, lock verification, wheel/sdist build, and all four offline
+examples successfully. A fresh `uv audit --locked` attempt failed to resolve
+`api.osv.dev` because DNS lookup failed; this session's audit is therefore
+**NOT VERIFIED**, not a pass. The reported prior successful audits are kept
+distinct from this failed-to-connect attempt.
+
+The supplied local evidence also reports clean installation checks and a
+successful external-consumer agent run. Those are historical results and were
+not rerun in this closure session.
 
 ## 10. Findings register
 
@@ -267,7 +294,7 @@ authorization granted for this task.
 | RR4-01 | Documentation inconsistency | Quickstart said approvals were unavailable and Windows/hosted CI were unverified. | **Resolved:** active docs now describe the implemented host-injected approval flow and cite the actual RR-003 matrix; history retained. |
 | RR4-02 | Documentation inconsistency | README/release notes/matrices said no agent loop and YANTRA-004 was absent from the candidate. | **Resolved:** current docs updated; historical audits preserved. |
 | RR4-03 | Coverage gap | Gateway retry execution had no focused retry tests despite an existing retry implementation. | **Resolved:** added four deterministic tests for approved retry success, non-retryable refusal, exhaustion, and approval fail-closed; all pass. |
-| RR4-04 | Release blocker | The final RR-004 candidate commit has no hosted nine-job matrix result. | **Open:** exact-commit CI must pass before release per `docs/development/releasing.md`; run requires an authorized push/PR. |
+| RR4-04 | Release gate | Exact-final-commit hosted matrix was absent at the original audit. | **Resolved by supplied evidence:** push and PR runs 39122672600 and 39122682064 report 9/9 passing jobs each on `5a89991ebd3c46c9478fb10849ae7db736becd85`; live records could not be independently queried in this closure session. |
 | RR4-05 | Important non-blocking issue | No dedicated private security reporting contact is configured. | **Open:** maintainer should establish a channel and response process before wider public promotion. |
 | RR4-06 | Accepted limitation | Live provider/model/account compatibility is mostly not independently verified. | **Accepted for offline developer preview:** keep capability gates truthful; do not infer live support from mocks. |
 | RR4-07 | Accepted limitation | Restricted worker is not an OS sandbox and does not promise descendant/resource controls. | **Accepted/documented:** no unsupported isolation claims. |
@@ -277,27 +304,33 @@ authorization granted for this task.
 
 | Area | Status | Evidence and remaining work |
 |---|---|---|
-| Packaging/install | **PASS** | Reproducible fresh artifacts, metadata/content inspection, clean wheel and sdist installs, external CLI checks. Exact-final-commit hosted build remains part of RR4-04. |
+| Packaging/install | **PASS** | Reproducible fresh artifacts, metadata/content inspection, clean wheel and sdist installs, external CLI checks; supplied exact-SHA hosted matrix includes wheel/sdist build checks where configured. |
 | Developer experience | **PASS** | Current install/quickstart docs and external installed-package agent cycle pass. API is experimental; version is not published. |
 | Provider integration | **CONDITIONAL PASS** | 65 provider/gateway tests; live provider matrix is mostly mock/unknown. Retry tests added; further delay-hint/cancellation coverage remains non-blocking. |
 | Security/execution | **CONDITIONAL PASS** | 45 focused security tests; full suite and historical hosted matrix pass. Scope limits and residual risks are explicit; no independent certification. |
 | Release docs/metadata | **PASS** | Current docs reconciled, metadata consistent, historical reports preserved. Dedicated security contact remains an important open action. |
-| Exact candidate CI | **NOT VERIFIED** | RR-003 run passed on base implementation commit, but RR-004 test additions are not included. Requires a fresh run on the final commit. |
+| Exact candidate CI | **PASS (supplied evidence)** | Two supplied RR-004 workflow records report all nine jobs passing on `5a89991ebd3c46c9478fb10849ae7db736becd85`; GitHub was unavailable for an independent query in this session. |
 
 ## 12. Remaining release blockers and recommendation
 
-**Developer-preview recommendation: NO-GO from this audit branch.** The
-release procedure requires a passing CI matrix for the exact candidate commit;
-the new retry tests have only local results. This gap is operational, not a
-known code failure. To clear it, an authorized maintainer must push/open a PR
-for the final RR-004 commit and verify all nine jobs. Re-run any failed job
-without weakening security policy or deleting tests.
+**Technical verdict: GO for RR-004 engineering acceptance**, based on the
+supplied successful exact-SHA push and PR matrix records plus the supplied
+dependency-audit results and local validation evidence. This GO is conditional
+on the accuracy of those supplied records; this Codex session could not
+independently query them. If this report is committed and pushed, that new
+final documentation commit must pass the complete matrix before it is
+considered CI-verified.
 
-After exact-commit CI passes, a release owner must review this audit and
-explicitly approve the developer preview. Before broader public promotion,
-maintainers should configure a private security-reporting contact. These are
-separate decisions; this report and a future GO recommendation do not authorize
-tagging, publishing, merging, or deployment.
+The runtime is not an OS sandbox, live provider compatibility is not
+comprehensively verified, and approval replay protection remains process-local.
+Maintainer approval is still required. Technical GO does not authorize merge,
+tagging, publishing, or release. Before broader public promotion, maintainers
+should establish a private security-reporting contact.
 
-No release tag, GitHub release, PyPI upload, version change, push, merge, or
-live provider call occurred during RR-004.
+Before a developer preview, a release owner must review this audit and
+explicitly approve the release. These are separate decisions; this report and
+its technical GO do not authorize tagging, publishing, merging, or deployment.
+
+No release tag, GitHub release, PyPI upload, version change, merge, or live
+provider call occurred during RR-004. No push was performed in this closure
+session because GitHub authentication and connectivity were unavailable.
