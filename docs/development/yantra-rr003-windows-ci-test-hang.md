@@ -110,3 +110,35 @@ Windows status to PASS.
 
 **Engineering verification: INCOMPLETE. Windows CI: INCOMPLETE. Public release
 readiness: NO-GO.** No release, merge, tag, push, or publication occurred.
+
+## Final RR-003 Closure
+
+**Status:** CLOSED — Hosted CI verification successful.
+
+### Integration Evidence
+
+- RR-003 fix commit: `790cc25`
+- RR-003 pull request: #2, merged into the RR-002 branch
+- RR-002 pull request: #1, merged into `main`
+- Final main commit: `2f07ec92d550f7734f844c8caaa4bd725d8b26fc`
+- Final GitHub Actions run: `39114896871`
+- Workflow conclusion: SUCCESS
+
+### Cross-Platform Verification
+
+| Platform | Python 3.12 | Python 3.13 | Python 3.14 |
+|---|---|---|---|
+| macOS | PASS | PASS | PASS |
+| Ubuntu | PASS | PASS | PASS |
+| Windows | PASS | PASS | PASS |
+
+All nine CI jobs passed on the merged main commit.
+
+### Closure Decision
+
+The previously observed Windows CI test hang is resolved for the tested configuration.
+
+RR-003 is closed as a hosted CI engineering blocker.
+
+This does not constitute authorization for a public release,
+a comprehensive security audit, or production readiness.
