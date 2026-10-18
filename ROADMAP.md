@@ -21,3 +21,7 @@ Research extensions (adaptive context/routing, evidence-guided recovery, skill l
 ## YANTRA-RR-002 Packaging and Python Compatibility
 
 **Engineering verification: PASS. Public release: NO-GO.** Fresh `0.2.0` wheel and sdist builds match current source; separate builds were byte-identical, and a wheel rebuilt from the sdist matched the direct wheel. Clean wheel installs passed on Python 3.12/3.13/3.14, clean sdist install passed on Python 3.12, and all 229 tests plus four offline examples passed on each interpreter. Windows runtime, hosted CI, and maintainer release approval remain outstanding. See the [RR-002 release-readiness evidence](docs/development/yantra-release-readiness-rr002.md) for artifact hashes and exact validation scope.
+
+## YANTRA-RR-003 Windows CI Hang
+
+**Engineering verification: INCOMPLETE. Windows CI: INCOMPLETE.** Existing Actions logs identify a brittle 50 ms timeout race and unbounded event wait in the test `test_timeout_racing_completed_worker_has_deterministic_timeout_result`. The regression now uses an immediate deterministic boundary result; pytest also emits a faulthandler stack after 120 seconds, with a 15-minute job limit. The corrected suite passes locally on macOS/Python 3.12–3.14, but the fix branch has not run on Windows because no push or workflow trigger was authorized. See the [RR-003 Windows CI hang report](docs/development/yantra-rr003-windows-ci-test-hang.md).

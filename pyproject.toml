@@ -52,6 +52,7 @@ include = ["src/yantra", "tests", "docs", "README.md", "pyproject.toml", "LICENS
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "-ra"
+faulthandler_timeout = 120
 
 [tool.ruff]
 line-length = 100
