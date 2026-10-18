@@ -37,6 +37,8 @@ from yantra.tools import (
 from yantra.tools.execution import (
     ExecutionAuthorization,
     ExecutionAuthorizationAuthority,
+    ExecutionResult,
+    ExecutionResultStatus,
     canonical_json_digest,
 )
 from yantra.tools.executor import _EngineToolExecutor
@@ -635,12 +637,22 @@ async def test_worker_completion_racing_cancellation_does_not_leak_child() -> No
 
 
 @pytest.mark.asyncio
-async def test_timeout_racing_completed_worker_has_deterministic_timeout_result() -> None:
+async def test_timeout_racing_ready_worker_result_has_deterministic_timeout_result() -> None:
+    """A timeout after worker completion must win while the result is being returned.
+
+    Keep process startup out of this test: its assertion is about timeout handling
+    after the boundary has a result, not about how quickly an OS starts a worker.
+    Real subprocess startup, timeout, and cleanup are covered by neighboring tests.
+    """
     completed = asyncio.Event()
 
     class PausedReturnBoundary(SubprocessExecutionBoundary):
-        async def _run_worker(self, request: bytes, invocation_id: UUID):
-            result = await super()._run_worker(request, invocation_id)
+        async def _run_worker(self, request: bytes, invocation_id: UUID) -> ExecutionResult:
+            del request, invocation_id
+            result = ExecutionResult(
+                status=ExecutionResultStatus.SUCCEEDED,
+                value={"value": "ab"},
+            )
             completed.set()
             await asyncio.Event().wait()
             return result
@@ -654,7 +666,8 @@ async def test_timeout_racing_completed_worker_has_deterministic_timeout_result(
             timeout=0.05,
         )
     )
-    await completed.wait()
+    async with asyncio.timeout(1):
+        await completed.wait()
     result = await task
     assert result.result["error_code"] == "tool_timeout"
     assert boundary.active_worker_count == 0
