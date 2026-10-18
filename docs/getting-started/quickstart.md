@@ -1,6 +1,9 @@
 # Core Contracts Quickstart
 
-This example uses implemented contracts and the deterministic mock provider. It exercises a provider call only; YANTRA-001 does not implement an agent execution loop.
+This core-contract example uses the deterministic mock provider and exercises
+a provider call only. For the implemented bounded model/tool/model cycle, see
+the [agent runtime quickstart](../guides/agent-quickstart.md) and
+`examples/agent_loop_offline.py`.
 
 ```python
 import asyncio
@@ -17,4 +20,6 @@ response = asyncio.run(provider.complete(request))
 assert response.message.content[0].text == "hello back"
 ```
 
-This mock-only example requires no credentials, network, database, or service. It is not an autonomous agent example and does not imply real providers are integrated.
+This mock-only example requires no credentials, network, database, or service.
+It is not itself an agent example and does not imply broad live provider
+compatibility.

@@ -163,11 +163,11 @@ explicit migration/deprecation decision; V05 does not silently change it.
 
 | Capability | Status | Evidence / boundary |
 |---|---|---|
-| Name/scope policy, approvals, exact-call HMAC authorization | Implemented and locally verified | macOS / Python 3.12 tests; public standalone executor calls fail closed. |
-| JSON protocol, static handlers, byte/time/concurrency limits | Implemented and locally verified | Deterministic offline worker tests on macOS. |
-| Direct-child timeout/cancellation cleanup, including startup and repeated cancellation | Implemented and locally verified | Terminate, wait, and kill after grace if needed. |
-| Subprocess startup, termination, handles, and environment behavior on Windows | Implemented but platform-unverified | Follow [Windows validation](../development/secure-tool-platform-validation.md). |
-| Python 3.13 and 3.14 | Runtime-unverified | Declared by project metadata; local run used Python 3.12 only. |
+| Name/scope policy, approvals, exact-call HMAC authorization | Implemented and tested | RR-004 local regression suites pass on macOS/Python 3.12–3.14; public standalone executor calls fail closed. This is regression verification, not an independent security certification. |
+| JSON protocol, static handlers, byte/time/concurrency limits | Implemented and tested | Full suite and offline worker tests pass locally on macOS/Python 3.12–3.14; hosted CI also passed the configured matrix. |
+| Direct-child timeout/cancellation cleanup, including startup and repeated cancellation | Implemented and tested | Execution-boundary tests pass locally on macOS/Python 3.12–3.14 and in the hosted OS/Python matrix. Descendant cleanup is not guaranteed. |
+| Subprocess startup, termination, handles, and environment behavior on Windows | CI-tested for the covered suite | RR-003 Actions run [39114896871](https://github.com/Rishit1769/Yantra/actions/runs/39114896871), commit `2f07ec9`: Windows Python 3.12/3.13/3.14 test/build/CLI jobs passed. This is not a process-tree or Windows Job Object guarantee. |
+| Python 3.13 and 3.14 | Verified in hosted CI and RR-004 macOS tests | RR-004 full suite passed on macOS/Python 3.13.15 and 3.14.7; RR-003 hosted matrix passed those interpreters on Ubuntu, macOS, and Windows. |
 | Descendant/process-tree cleanup | Planned, not implemented | No process groups or Windows Job Objects; direct-child guarantee only. |
 | CPU/memory/disk quotas; filesystem/network restrictions; rollback | Explicitly unsupported | Needs separate OS-enforced design and platform evidence. |
 | Containment of hostile in-process Python | Explicitly unsupported | Host code and registered handlers are trusted. |

@@ -1,15 +1,18 @@
 # Feature Matrix
 
-YANTRA-001 adds a Python package and local contract foundation. YANTRA-002 adds the model gateway foundation. Complete feature families remain incomplete; only the specific implemented portions are marked In Development. The 3-operating-system/3-Python CI matrix is configured, but hosted execution is pending; configuration is not verification.
+YANTRA-001 adds a Python package and local contract foundation. YANTRA-002 adds the model gateway; YANTRA-003 adds a bounded model/tool loop; YANTRA-004 adds focused tool authorization, trusted approvals, and restricted subprocess execution. The table marks the implemented scope, not completeness of broader feature families. The configured nine-job Ubuntu/macOS/Windows × Python 3.12/3.13/3.14 matrix passed in RR-003 run [39114896871](https://github.com/Rishit1769/Yantra/actions/runs/39114896871) on commit `2f07ec9`. RR-004 is the current source of package/release status.
 
 | Capability | Status | Target phase | Key boundary |
 |---|---|---|---|
-| Python contracts/state machine | In Development | 1 | Agent/message/budget/result/state/event contracts; no execution loop |
-| Model gateway (YANTRA-002) | In Development | 1 | Normalized adapters and mocked wire tests; provider behavior not live-verified |
-| Developer smoke CLI (YANTRA-002-V01) | In Development | 1 | Offline mock and manual Ollama/OpenCode checks; not an agent runner |
-| Provider abstraction | In Development | 1 | Async protocol, deterministic mock, and explicit provider registry |
-| Tool registry | In Development | 1 | Typed definitions/validation/schema export; no authorization or execution |
-| Events and logging | In Development | 1 | Serializable events and local structured logger; no tracing backend |
+| Python contracts/state machine | Implemented | 1 | Typed contracts/state/event foundation; no durable persistence |
+| Bounded agent runtime (YANTRA-003) | Implemented, experimental | 1 | Sequential model/tool loop, bounded controls, cancellation, and usage/cost accounting; budgets are not hard billing ceilings |
+| Model gateway (YANTRA-002) | Implemented | 1 | Normalized adapters, mocked protocol tests; live provider/model behavior remains limited/unknown |
+| Developer smoke CLI (YANTRA-002-V01) | Implemented | 1 | Offline mock and opt-in provider smoke checks; not a general agent CLI |
+| Provider abstraction | Implemented | 1 | Async protocol, deterministic mock, explicit provider registry |
+| Tool registry and policy (YANTRA-004) | Implemented | 1 | Typed definitions, name allowlist, exact scopes, trusted approvals, and engine-authorized dispatch |
+| Restricted worker subprocess (YANTRA-004) | Implemented, limited | 1 | Fixed handler IDs, bounded JSON IPC and direct-child lifecycle; not an OS sandbox and no descendant/resource guarantee |
+| Events and logging | Implemented | 1 | Serializable runtime events and local structured logger; no tracing backend |
+| Hosted CI matrix | Verified for RR-003 source | 1 | All nine configured jobs passed; RR-004's final commit still requires its own CI result before release |
 | PostgreSQL persistence | Proposed | 2 | Python calls versioned TypeScript service; not used in YANTRA-001 |
 | Sessions, checkpoints, recovery | Proposed | 2 | No exactly-once external effects guarantee |
 | Skills and validation | Proposed | 3 | Imported/generated content untrusted |

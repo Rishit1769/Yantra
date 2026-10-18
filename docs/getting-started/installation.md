@@ -1,12 +1,16 @@
 # Installation
 
-YANTRA-001/002 provide a source-installable Python package. The release-candidate version is `0.2.0`; no package-index release has been published. Use Python 3.12+ and uv from the repository root:
+YANTRA `0.2.0` is an unreleased developer-preview candidate; no package-index release has been published. To try the current source, use Python 3.12+ and uv from the repository root:
 
 ```sh
-uv sync --all-groups
+uv sync --locked --all-groups
 uv run python -c "import yantra; print(yantra.__version__)"
-uv build --wheel
+uv run python examples/agent_loop_offline.py
 ```
+
+The offline agent example performs a complete mock model/tool/model cycle and
+makes no network requests. For isolated wheel/sdist installation and external
+consumer verification, see the current [RR-004 audit](../development/yantra-release-readiness-rr004.md).
 
 The model gateway uses HTTPX, included in the base package. OS keyring support is optional; install it with `uv sync --extra credentials` when secure credential storage is needed. The mock quickstart makes no network requests; gateway adapters do when called.
 

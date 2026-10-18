@@ -16,12 +16,16 @@ Research extensions (adaptive context/routing, evidence-guided recovery, skill l
 
 ## YANTRA-RR-001 Release Readiness
 
-**Engineering verification: PASS. Public release: NO-GO.** Local macOS/Python 3.12 checks passed (229 tests, quality checks, examples, and security regression files). Static inspection found the existing ignored `0.2.0` wheel and sdist do not match the current checkout; Hatchling/build frontend are unavailable, preventing a fresh build and clean install. Python 3.13/3.14 environments lack project dependencies, Windows is unavailable, and hosted CI remains blocked. See the [RR-001 release-readiness evidence](docs/development/yantra-release-readiness-rr001.md) for exact statuses and corrective actions.
+**RR-001 historical decision: engineering verification PASS; release NO-GO at that time.** Its 229-test macOS/Python 3.12 run and packaging/hosted blockers are preserved in the [RR-001 evidence](docs/development/yantra-release-readiness-rr001.md); later RR-002/RR-003/RR-004 evidence supersedes those point-in-time blockers.
 
 ## YANTRA-RR-002 Packaging and Python Compatibility
 
-**Engineering verification: PASS. Public release: NO-GO.** Fresh `0.2.0` wheel and sdist builds match current source; separate builds were byte-identical, and a wheel rebuilt from the sdist matched the direct wheel. Clean wheel installs passed on Python 3.12/3.13/3.14, clean sdist install passed on Python 3.12, and all 229 tests plus four offline examples passed on each interpreter. Windows runtime, hosted CI, and maintainer release approval remain outstanding. See the [RR-002 release-readiness evidence](docs/development/yantra-release-readiness-rr002.md) for artifact hashes and exact validation scope.
+**RR-002 historical decision: engineering verification PASS; release NO-GO at that time.** It verified reproducible package artifacts, clean installs, and Python 3.12–3.14 on macOS. Its then-pending Windows/hosted status was superseded by RR-003; retain the original [RR-002 evidence](docs/development/yantra-release-readiness-rr002.md) for exact scope.
 
 ## YANTRA-RR-003 Windows CI Hang
 
-**Engineering verification: INCOMPLETE. Windows CI: INCOMPLETE.** Existing Actions logs identify a brittle 50 ms timeout race and unbounded event wait in the test `test_timeout_racing_completed_worker_has_deterministic_timeout_result`. The regression now uses an immediate deterministic boundary result; pytest also emits a faulthandler stack after 120 seconds, with a 15-minute job limit. The corrected suite passes locally on macOS/Python 3.12–3.14, but the fix branch has not run on Windows because no push or workflow trigger was authorized. See the [RR-003 Windows CI hang report](docs/development/yantra-rr003-windows-ci-test-hang.md).
+**Engineering verification: PASS for the tested matrix.** RR-003's [Actions run 39114896871](https://github.com/Rishit1769/Yantra/actions/runs/39114896871) passed all nine Ubuntu/macOS/Windows × Python 3.12/3.13/3.14 jobs on commit `2f07ec9`, closing the Windows test hang. The earlier canceled evidence and diagnosis remain recorded in the [RR-003 report](docs/development/yantra-rr003-windows-ci-test-hang.md); the report's final closure section records the successful run.
+
+## YANTRA-RR-004 Developer-Preview Readiness
+
+**Recommendation: NO-GO for release from this audit branch.** RR-004 freshly built reproducible `0.2.0` artifacts, installed wheel and sdist outside the checkout, completed an external public-API model/tool/model cycle, passed 233 local tests on Python 3.12/3.13/3.14, corrected stale current documentation, and added retry regressions. The exact RR-004 final commit has not run hosted CI; the RR-003 result does not include its added tests. No live provider calls, push, tag, or publication occurred. See the [RR-004 report](docs/development/yantra-release-readiness-rr004.md) for area-level findings and exact release gates.

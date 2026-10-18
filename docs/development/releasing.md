@@ -57,4 +57,4 @@ Do not use a long-lived PyPI API token when Trusted Publishing is available. Do 
 
 ## Current Candidate
 
-The prepared package version is `0.2.0`, with intended tag `v0.2.0`. YANTRA-002-R03 is release preparation only. Until all prerequisites and every CI matrix result are verified and an authorized maintainer approves the release, the candidate must not be tagged or published.
+The prepared package version is `0.2.0`, with intended tag `v0.2.0`. RR-003 verified the nine-job matrix on commit `2f07ec9`; RR-004 is the current developer-preview audit. Its report records fresh wheel/sdist builds, clean installations, external consumer behavior, and local tests. The exact RR-004 audit commit still requires the configured CI matrix before it is a release candidate under this procedure. Until all prerequisites and every matrix result for the exact candidate are verified and an authorized maintainer approves the release, the package must not be tagged or published.

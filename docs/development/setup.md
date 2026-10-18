@@ -32,4 +32,10 @@ uv build --wheel
 uv run yantra-smoke offline
 ```
 
-`uv.lock` pins the development environment. CI is configured for macOS and Windows; until GitHub Actions succeeds on both, those platforms remain unverified. No PostgreSQL service is needed for the current tests.
+`uv.lock` pins the development environment. The RR-003 GitHub Actions run
+[39114896871](https://github.com/Rishit1769/Yantra/actions/runs/39114896871)
+passed the configured Ubuntu/macOS/Windows × Python 3.12/3.13/3.14 matrix on
+commit `2f07ec9`; the current RR-004 audit separately records its local
+macOS/Python 3.12–3.14 results. These checks do not establish every platform
+configuration or OS sandbox guarantees. No PostgreSQL service is needed for
+the current tests.

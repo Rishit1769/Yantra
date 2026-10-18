@@ -2,6 +2,11 @@
 
 **Decision: PASS — accepted for engineering completion; not released.** This record closes the planned YANTRA-004 engineering work on the feature branch. It is not a release approval, public compatibility claim, or production readiness statement. Package version remains `0.2.0`.
 
+This V05 closure preserves the evidence available at that milestone. Later
+packaging, Python-version, and hosted matrix results are recorded in the
+[RR-004 release-readiness audit](yantra-release-readiness-rr004.md); those
+results do not change the scope or limitations stated below.
+
 ## 1. Milestone objective
 
 Provide an explicit, model-independent secure tool path: per-run name allowlisting, exact permission scopes, trusted invocation-specific approval, engine-controlled dispatch authorization, and opt-in restricted subprocess execution, with clear failure handling and offline developer examples.

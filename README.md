@@ -4,7 +4,7 @@
 
 YANTRA is a model-agnostic AI agent harness and orchestration framework intended for open-source development. Its architecture aims to give developers explicit control over agent execution, tools, skills, state, persistence, security policy, and observability without binding the framework to one model vendor or application.
 
-> **Status:** YANTRA-001 core contracts and the YANTRA-002 model gateway have local test coverage. YANTRA-003 bounded agent execution is engineering-accepted on its feature branch; YANTRA-004-V01–V05 are accepted for engineering completion on `feat/yantra-004-secure-tools`. These engineering decisions do not constitute a release. RR-002 built fresh `0.2.0` wheel and sdist artifacts from the accepted source, verified clean installs, and passed all 229 tests on Python 3.12.15, 3.13.15, and 3.14.7. Public release readiness remains NO-GO pending Windows runtime verification, hosted CI, and maintainer approval. Subprocess execution is not an OS sandbox, provides no process-tree guarantee, and has no OS resource quotas. Approvals are not durable or exactly-once. Usage/cost limits are not hard spending ceilings. See the [RR-002 release-readiness evidence](docs/development/yantra-release-readiness-rr002.md), [RR-001 release-readiness evidence](docs/development/yantra-release-readiness-rr001.md), [YANTRA-004 engineering closure](docs/development/yantra-004-engineering-closure.md), [offline agent quickstart](docs/guides/agent-quickstart.md), [secure tool runtime](docs/security/secure-tool-runtime.md), [secure tool platform validation](docs/development/secure-tool-platform-validation.md), [provider verification matrix](docs/features/provider-verification.md), [agent execution engine](docs/architecture/agent-execution-engine.md), [release notes](docs/releases/v0.2.0-release-notes.md), and [release audit](docs/releases/v0.2.0-release-audit.md).
+> **Status:** YANTRA-001 through YANTRA-004 implement the typed core, model gateway, bounded agent loop, exact-scope tool authorization, trusted approval flow, and optional restricted worker subprocess. The API is experimental and pre-1.0; `0.2.0` remains an unreleased developer-preview candidate. RR-003's hosted Actions run [39114896871](https://github.com/Rishit1769/Yantra/actions/runs/39114896871) passed all nine Ubuntu/macOS/Windows and Python 3.12/3.13/3.14 jobs on commit `2f07ec9`. RR-004 has freshly built and installed the wheel and sdist, verified an external offline model-tool-model consumer, and passed the local test and package checks. The RR-004 report records the exact evidence and final recommendation; it does not authorize a release. Tool subprocesses are not OS-sandboxed, do not guarantee descendant cleanup, and have no OS resource quotas. Approval replay protection is process-local, and usage/cost budgets are not hard spending ceilings. See the [RR-004 release-readiness audit](docs/development/yantra-release-readiness-rr004.md), [RR-003 CI closure](docs/development/yantra-rr003-windows-ci-test-hang.md), [YANTRA-004 engineering closure](docs/development/yantra-004-engineering-closure.md), [offline agent quickstart](docs/guides/agent-quickstart.md), [secure tool runtime](docs/security/secure-tool-runtime.md), [provider verification matrix](docs/features/provider-verification.md), [release notes](docs/releases/v0.2.0-release-notes.md), and [release audit](docs/releases/v0.2.0-release-audit.md).
 
 ## Why a harness?
 
@@ -95,6 +95,30 @@ Tools are individual executable capabilities with schemas, permissions, side-eff
 ## Persistence and security
 
 The proposed TypeScript service owns database access and Prisma migrations. The Python adapter speaks a versioned RPC contract; initial transport recommendation is HTTP/JSON over authenticated TLS because it is inspectable and operationally straightforward. gRPC and in-process alternatives are evaluated in the [persistence service design](docs/database/persistence-service.md). No raw credentials belong in database tables. Tool, browser, plugin, and sandbox boundaries require least privilege; Docker alone is not considered a complete security boundary. See [threat model](docs/security/threat-model.md).
+
+## Install and run the offline agent
+
+The `0.2.0` candidate is not published to PyPI. To try the current source, clone
+the repository and install its locked development environment:
+
+```bash
+git clone https://github.com/Rishit1769/Yantra.git
+cd Yantra
+uv sync --locked --all-groups
+uv run python examples/agent_loop_offline.py
+```
+
+The example uses only a deterministic mock provider and a local calculator;
+it makes no network requests. Its final answer is:
+
+```text
+Final answer: 12 + 8 = 20. The sum is 20.
+```
+
+It demonstrates a complete model → tool → model cycle using the public
+`ModelGateway`, `AgentExecutionEngine`, and `ToolRegistry` APIs. See the
+[agent quickstart](docs/guides/agent-quickstart.md) for the complete setup,
+tool registration, security controls, and limitations.
 
 ## Core contracts quickstart
 
