@@ -18,6 +18,7 @@ from yantra.providers.gateway import ModelGateway
 from yantra.providers.identifiers import ModelIdentifier
 from yantra.providers.mock import MockProvider
 from yantra.providers.registry import ProviderAvailability, ProviderRegistry
+from yantra.providers.retries import RetryPolicy
 from yantra.routing.policy import ModelRoutingPolicy
 
 
@@ -239,3 +240,97 @@ async def test_approved_fallback_uses_separate_provider_adapter() -> None:
     assert result.response.message.content[0].text == "fallback response"
     assert result.selected_model == "fallback/model-b"
     assert result.fallback_models == ("fallback/model-b",)
+
+
+@pytest.mark.asyncio
+async def test_gateway_retries_classified_transient_failure_with_approved_policy() -> None:
+    request = ModelRequest(model_id="model-a", messages=(user_message(),))
+    response = MockProvider.text_response(request, "recovered", provider_id="retry-mock")
+    provider = MockProvider(
+        [
+            ProviderUnavailableError("temporary outage", provider_id="retry-mock", retryable=True),
+            response,
+        ],
+        provider_id="retry-mock",
+    )
+    registry = ProviderRegistry()
+    registry.register(provider)
+    policy = ModelRoutingPolicy(max_attempts_per_provider=2).approve()
+    gateway = ModelGateway(
+        registry,
+        routing_policy=policy,
+        retry_policy=RetryPolicy(max_attempts=2, base_delay_seconds=0, max_delay_seconds=0),
+    )
+
+    result = await gateway.complete(request, model="retry-mock/model-a")
+
+    assert result.response.message.content[0].text == "recovered"
+    assert len(provider.requests) == 2
+
+
+@pytest.mark.asyncio
+async def test_gateway_does_not_retry_nonretryable_failure() -> None:
+    request = ModelRequest(model_id="model-a", messages=(user_message(),))
+    provider = MockProvider(
+        [
+            ProviderUnavailableError(
+                "permanent provider rejection", provider_id="retry-mock", retryable=False
+            ),
+            MockProvider.text_response(request, "must not be consumed", provider_id="retry-mock"),
+        ],
+        provider_id="retry-mock",
+    )
+    registry = ProviderRegistry()
+    registry.register(provider)
+    policy = ModelRoutingPolicy(max_attempts_per_provider=2).approve()
+    gateway = ModelGateway(
+        registry,
+        routing_policy=policy,
+        retry_policy=RetryPolicy(max_attempts=2, base_delay_seconds=0, max_delay_seconds=0),
+    )
+
+    with pytest.raises(ProviderUnavailableError, match="permanent provider rejection"):
+        await gateway.complete(request, model="retry-mock/model-a")
+
+    assert len(provider.requests) == 1
+    assert provider.remaining_responses == 1
+
+
+@pytest.mark.asyncio
+async def test_gateway_stops_after_configured_retry_exhaustion() -> None:
+    request = ModelRequest(model_id="model-a", messages=(user_message(),))
+    provider = MockProvider(
+        [
+            ProviderUnavailableError(
+                "temporary outage 1", provider_id="retry-mock", retryable=True
+            ),
+            ProviderUnavailableError(
+                "temporary outage 2", provider_id="retry-mock", retryable=True
+            ),
+            MockProvider.text_response(request, "must not be consumed", provider_id="retry-mock"),
+        ],
+        provider_id="retry-mock",
+    )
+    registry = ProviderRegistry()
+    registry.register(provider)
+    policy = ModelRoutingPolicy(max_attempts_per_provider=2).approve()
+    gateway = ModelGateway(
+        registry,
+        routing_policy=policy,
+        retry_policy=RetryPolicy(max_attempts=2, base_delay_seconds=0, max_delay_seconds=0),
+    )
+
+    with pytest.raises(ProviderUnavailableError, match="temporary outage 2"):
+        await gateway.complete(request, model="retry-mock/model-a")
+
+    assert len(provider.requests) == 2
+    assert provider.remaining_responses == 1
+
+
+def test_gateway_requires_approval_for_multiple_attempts() -> None:
+    with pytest.raises(RoutingPolicyError, match="approval"):
+        ModelGateway(
+            ProviderRegistry(),
+            routing_policy=ModelRoutingPolicy(max_attempts_per_provider=2),
+            retry_policy=RetryPolicy(max_attempts=2, base_delay_seconds=0, max_delay_seconds=0),
+        )
