@@ -28,6 +28,7 @@ dependencies = [
 credentials = ["keyring>=25,<27"]
 
 [project.scripts]
+yantra = "yantra.cli:main"
 yantra-smoke = "yantra.devtools.smoke:main"
 
 [dependency-groups]
@@ -46,7 +47,7 @@ packages = ["src/yantra"]
 path = "src/yantra/_version.py"
 
 [tool.hatch.build.targets.sdist]
-include = ["src/yantra", "tests", "docs", "README.md", "pyproject.toml", "LICENSE"]
+include = ["src/yantra", "tests", "docs", "scripts", "README.md", "pyproject.toml", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

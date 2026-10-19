@@ -1,5 +1,9 @@
 # Core Contracts Quickstart
 
+For the complete offline agent demonstration from an installed package, run
+`yantra quickstart`; it exercises a bounded model → tool → model cycle without
+network or credentials. See the [CLI reference](../features/cli.md).
+
 This core-contract example uses the deterministic mock provider and exercises
 a provider call only. For the implemented bounded model/tool/model cycle, see
 the [agent runtime quickstart](../guides/agent-quickstart.md) and

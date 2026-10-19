@@ -287,7 +287,7 @@ def _configured_status(runtime: _SmokeRuntime, provider_id: str) -> str:
 
 
 def _print_providers(runtime: _SmokeRuntime) -> None:
-    print("Configured smoke-test providers (no network requests):")
+    print("Supported providers (no network requests):")
     for registration in runtime.registry.list():
         provider_id = registration.metadata.provider_id
         print(f"- {provider_id}: {_configured_status(runtime, provider_id)}")

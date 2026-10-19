@@ -1,6 +1,6 @@
 # Introduction
 
-YANTRA provides an installable Python package with typed core contracts, a model gateway and adapters, a bounded asynchronous agent loop, a tool registry, exact-scope authorization, trusted host-injected approvals, optional restricted worker subprocess execution, in-memory storage, and structured logging. Provider protocol tests use mocked HTTP; they do not prove broad live provider/model compatibility. The package has a focused `yantra-smoke` CLI, not a general-purpose agent CLI, and has no durable persistence adapter.
+YANTRA provides an installable Python package with typed core contracts, a model gateway and adapters, a bounded asynchronous agent loop, a tool registry, exact-scope authorization, trusted host-injected approvals, optional restricted worker subprocess execution, in-memory storage, and structured logging. Provider protocol tests use mocked HTTP; they do not prove broad live provider/model compatibility. The focused `yantra` developer CLI includes safe local diagnostics and an offline agent quickstart; `yantra-smoke` remains the gateway diagnostic CLI. YANTRA has no durable persistence adapter.
 
 The initial user is a Python developer who needs a controlled model/tool loop and wants to choose providers. The core should run in process with an in-memory adapter; durability, browser automation, vector search, and distributed workers are opt-in subsystems.
 

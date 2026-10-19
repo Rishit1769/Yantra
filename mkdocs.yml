@@ -15,6 +15,7 @@ nav:
   - Getting started:
       - Introduction: getting-started/introduction.md
       - Installation: getting-started/installation.md
+      - Troubleshooting: getting-started/troubleshooting.md
       - Quickstart: getting-started/quickstart.md
       - Agent runtime quickstart: guides/agent-quickstart.md
       - Configuration: getting-started/configuration.md
@@ -36,6 +37,7 @@ nav:
       - Persistence service: database/persistence-service.md
       - pgvector: database/pgvector.md
   - Features:
+      - CLI: features/cli.md
       - Runtime: features/agent-runtime.md
       - Providers: features/model-providers.md
       - Provider verification: features/provider-verification.md
@@ -55,6 +57,9 @@ nav:
   - Development:
       - Setup: development/setup.md
       - Releasing: development/releasing.md
+      - Artifact verification: development/release-artifact-verification.md
+      - Developer-preview policy: development/developer-preview-policy.md
+      - YANTRA-005 report: development/yantra-005-developer-preview.md
   - Releases:
       - v0.2.0 release notes: releases/v0.2.0-release-notes.md
       - v0.2.0 audit: releases/v0.2.0-release-audit.md

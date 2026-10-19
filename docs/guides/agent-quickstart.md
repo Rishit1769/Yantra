@@ -10,6 +10,10 @@ does not promise a stable pre-1.0 API.
 
 ## Run the offline demonstration
 
+For a quick installed-package run, use `yantra quickstart` as described in the
+[CLI reference](../features/cli.md). The repository example below is useful
+when you want to inspect or edit the full Python setup.
+
 From the repository root, install the locked development environment and run:
 
 ```bash

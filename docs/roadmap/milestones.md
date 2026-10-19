@@ -8,6 +8,9 @@ status; the superseding [RR-004 audit](../development/yantra-release-readiness-r
 records the current API, package, Python-version, hosted-CI, and release-gate
 evidence without rewriting those milestone histories.
 
+The current YANTRA-005 implementation and its point-in-time evidence are
+recorded separately in the [YANTRA-005 engineering report](../development/yantra-005-developer-preview.md).
+
 ## Phase 1 — Foundation
 - Dependencies: repository governance and license decision; API review.
 - Deliverables: package structure, typed contracts, model gateway with one conformance-tested adapter, agent runtime/state machine, tool registry/policy, basic tracing, CLI, unit/property tests.
@@ -38,6 +41,18 @@ evidence without rewriting those milestone histories.
 - Deliverables: optional inspector, distributed workers, deployment artifacts, evaluation suite, skill builder, release automation.
 - Acceptance: headless SDK independent of UI; worker fencing/duplicate tests; reproducible evaluation reports; release artifacts verifiable; backup/restore evidence.
 - Release gate: production-readiness criteria in [production readiness](production-readiness.md) all have recorded evidence.
+
+### YANTRA-005 — Developer Preview Distribution and Release Engineering
+
+**Status: locally implemented; hosted verification pending.** The `yantra`
+developer CLI, offline quickstart, safe doctor/provider/model commands,
+cross-platform installation and stability guidance, artifact validation, and
+read-only release-candidate CI are implemented. Local test/build/install and
+dependency-audit evidence is in the [engineering report](../development/yantra-005-developer-preview.md).
+The new nine-job OS/Python matrix was dispatched for PR #5 but remained queued
+without any job starting at the time of this report; hosted cross-platform
+verification and release readiness therefore remain **NOT VERIFIED**. Version
+`0.2.0` is unchanged, and no release or publication has occurred.
 
 ## Research extensions
 Adaptive context, adaptive routing, evidence-guided recovery, and skill learning proceed as isolated experiments with baselines, ablations, reproducibility manifests, privacy reviews, and no default behavior change until evidence and safety review support adoption.
