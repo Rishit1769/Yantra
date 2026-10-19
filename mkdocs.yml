@@ -60,6 +60,7 @@ nav:
       - Artifact verification: development/release-artifact-verification.md
       - Developer-preview policy: development/developer-preview-policy.md
       - YANTRA-005 report: development/yantra-005-developer-preview.md
+      - YANTRA-005 CI repair: development/yantra-005-ci-release-repair.md
   - Releases:
       - v0.2.0 release notes: releases/v0.2.0-release-notes.md
       - v0.2.0 audit: releases/v0.2.0-release-audit.md

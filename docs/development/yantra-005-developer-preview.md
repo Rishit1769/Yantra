@@ -4,6 +4,8 @@
 
 **Local engineering verification: PASS. Hosted verification: NOT VERIFIED. Release: NO-GO / not authorized.** YANTRA-005 adds a standard-library CLI entry point, deterministic offline agent demonstration, safe local diagnostics, end-user installation and stability documentation, portable distribution checks, and a manually dispatched / PR-triggered release-candidate workflow. The package version remains `0.2.0`. This report does not authorize a tag, GitHub Release, package-index publication, or merge.
 
+For the post-merge queue investigation and CI trigger cleanup, see the [YANTRA-005 CI and release verification repair report](yantra-005-ci-release-repair.md).
+
 ## Scope delivered
 
 - Added `yantra --version`, `doctor`, `providers`, `models`, and `quickstart` while preserving the existing `yantra-smoke` entry point. Model listing is offline by default; network lookup requires `yantra models PROVIDER --live`. Doctor checks local runtime/dependency state and reports only whether credential variables exist, never their values. Optional Ollama checking is explicit and restricted to a loopback endpoint.
