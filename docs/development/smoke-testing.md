@@ -2,6 +2,11 @@
 
 `yantra-smoke` is a developer test runner over the existing public provider and gateway APIs. It does not create an agent, execute tools, or write request/response data to disk.
 
+For the installed developer CLI and explicit opt-in model discovery, see the
+[YANTRA CLI guide](../features/cli.md). In contrast to `yantra models`, the
+legacy `yantra-smoke models PROVIDER` command directly makes a live catalog
+request for backward compatibility.
+
 ## Modes
 
 | Command | Network behavior | Inference/billing |

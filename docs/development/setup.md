@@ -9,6 +9,8 @@ Install Python 3.12 and uv using the official installers for your environment. F
 ```sh
 uv sync --all-groups
 uv run python -c "import yantra; print(yantra.__version__)"
+uv run yantra doctor
+uv run yantra quickstart
 uv run ruff check .
 uv run ruff format --check .
 uv run pyright
@@ -24,6 +26,8 @@ Install Python 3.12 and uv using the official Windows installers. From the repos
 ```powershell
 uv sync --all-groups
 uv run python -c "import yantra; print(yantra.__version__)"
+uv run yantra doctor
+uv run yantra quickstart
 uv run ruff check .
 uv run ruff format --check .
 uv run pyright

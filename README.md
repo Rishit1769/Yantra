@@ -105,20 +105,23 @@ the repository and install its locked development environment:
 git clone https://github.com/Rishit1769/Yantra.git
 cd Yantra
 uv sync --locked --all-groups
-uv run python examples/agent_loop_offline.py
+uv run yantra --version
+uv run yantra doctor
+uv run yantra quickstart
 ```
 
-The example uses only a deterministic mock provider and a local calculator;
-it makes no network requests. Its final answer is:
+The quickstart uses only a deterministic mock provider and a local calculator;
+it makes no network requests. Its final response is:
 
 ```text
 Final answer: 12 + 8 = 20. The sum is 20.
 ```
 
 It demonstrates a complete model → tool → model cycle using the public
-`ModelGateway`, `AgentExecutionEngine`, and `ToolRegistry` APIs. See the
-[agent quickstart](docs/guides/agent-quickstart.md) for the complete setup,
-tool registration, security controls, and limitations.
+`ModelGateway`, `AgentExecutionEngine`, and `ToolRegistry` APIs. The
+`yantra-smoke` gateway diagnostic CLI remains available. See the
+[installation guide](docs/getting-started/installation.md), [CLI reference](docs/features/cli.md),
+[agent quickstart](docs/guides/agent-quickstart.md), and [developer-preview policy](docs/development/developer-preview-policy.md).
 
 ## Core contracts quickstart
 

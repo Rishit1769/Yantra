@@ -12,8 +12,10 @@ Identifiers are distinct:
 
 - `YANTRA-002` is the model-gateway engineering milestone.
 - `YANTRA-002-R03` identifies this release-preparation task.
+- `YANTRA-005` identifies the developer-preview distribution and release-engineering milestone.
 - `0.2.0` is the Python package release-candidate version.
 - `v0.2.0` is the intended Git tag for that package version.
+- `v0.3.0` has been discussed as a future developer preview but is not authorized or prepared by YANTRA-005.
 
 No tag is created by routine development or CI.
 
@@ -27,6 +29,8 @@ Before requesting release approval:
 - Require passing CI for every configured OS/Python matrix combination. A workflow definition is not execution evidence.
 - Run the locked test, Ruff, Pyright, build, and dependency-vulnerability checks.
 - Build and install both wheel and sdist in isolated environments outside the checkout; run only offline CLI tests during release validation.
+- Run the `Release Candidate Verification` workflow and retain its artifact and SHA-256 manifest. This workflow does not tag, publish, or create a GitHub Release.
+- Verify downloaded artifacts using the portable procedure in [release artifact verification](release-artifact-verification.md).
 - Review the provider evidence matrix, security review, known limitations, release audit, changelog, and release notes.
 - Resolve all critical/high security findings and release blockers. Any accepted residual risk must have a written owner decision before approval.
 - Obtain explicit maintainer/release-owner approval. This repository has no formal governance model; authority must be established by the project maintainers rather than inferred by this document.
@@ -38,11 +42,11 @@ Before requesting release approval:
 3. Confirm Apache 2.0 SPDX metadata and complete license inclusion in both distributions.
 4. Run `uv sync --locked --all-groups` and `uv lock --check`.
 5. Run `uv run ruff check .`, `uv run ruff format --check .`, `uv run pyright`, and `uv run pytest -v`.
-6. Run `uv audit --locked` and review all findings and the scan's data-source limitations.
-7. Build with `uv build`; inspect metadata, contents, entry points, private-file exclusions, and archive hashes.
-8. Install wheel and sdist independently in clean environments outside the repository; verify version, imports, license metadata, and offline CLI behavior.
+6. Run `uv audit --locked` and review all findings and the scan's data-source limitations. If OSV is unreachable, mark it NOT VERIFIED.
+7. Build with `uv build --wheel --sdist`; run `python scripts/verify_release_artifacts.py --dist dist`; inspect metadata, contents, entry points, private-file exclusions, and archive hashes.
+8. Install wheel and sdist independently in clean environments outside the repository; verify version, imports, license metadata, both CLI entry points, and offline quickstart behavior.
 9. Review the changelog, release notes, provider matrix, API docs, security findings, and known limitations.
-10. Verify actual green GitHub Actions results for the exact candidate commit on Ubuntu, macOS, and Windows with Python 3.12, 3.13, and 3.14.
+10. Verify actual green GitHub Actions results for the exact candidate commit on Ubuntu, macOS, and Windows with Python 3.12, 3.13, and 3.14. The release-candidate workflow's full matrix is distinct from the artifact-build job.
 11. Obtain release-audit approval and explicit authorization to tag.
 12. Only after authorization, create the intended tag `v0.2.0` pointing to the approved candidate commit. This task does not create it.
 13. Verify tag target and build artifacts from the tagged source. Sign the tag only if an approved signing key and project signing policy exist.
@@ -57,4 +61,4 @@ Do not use a long-lived PyPI API token when Trusted Publishing is available. Do 
 
 ## Current Candidate
 
-The prepared package version is `0.2.0`, with intended tag `v0.2.0`. RR-003 verified the nine-job matrix on commit `2f07ec9`; RR-004 is the current developer-preview audit. Its report records fresh wheel/sdist builds, clean installations, external consumer behavior, and local tests. The exact RR-004 audit commit still requires the configured CI matrix before it is a release candidate under this procedure. Until all prerequisites and every matrix result for the exact candidate are verified and an authorized maintainer approves the release, the package must not be tagged or published.
+The prepared package version remains `0.2.0`; no release tag is approved. YANTRA-005 adds the `yantra` developer CLI, offline installed-package quickstart, artifact verification, and a release-candidate workflow. The workflow's successful run must match the exact candidate commit before release consideration. The prior `v0.3.0` proposal remains future and unapproved. Until all prerequisites and every matrix result for the exact candidate are verified and an authorized maintainer separately approves release and publication, the package must not be tagged, published, or released.

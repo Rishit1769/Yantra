@@ -1,40 +1,77 @@
-# CLI
+# Developer CLI
 
-## Overview
-The initial developer CLI is a small standard-library `argparse` smoke runner over public YANTRA-002 gateway APIs. A broader Typer/Rich CLI remains a future possibility, not a dependency of this feature.
-## Motivation
-Project bootstrap, local execution, validation, inspection, and evaluation should be reproducible.
-## Functional requirements
-1. `YANTRA-CLI-001`: `yantra-smoke` provides explicit offline mock, provider listing, live catalog, and manually selected completion/stream commands. Broader project/runtime commands remain proposed.
-2. `YANTRA-CLI-002`: Clearly distinguish local non-durable mode from configured durable service.
-3. `YANTRA-CLI-003`: Never print secrets; require confirmation for destructive operations.
-## Non-functional requirements
-Security: safe output and auth. Performance: streaming output. Reliability: actionable exit codes. Scalability: paginated results. Maintainability: CLI calls public APIs only.
-## Architecture
-Standard-library `argparse`, public provider registry/catalog/gateway, normalized output.
-## Data flow
-Parse -> validate config/auth -> invoke API -> render redacted result/events -> exit code.
-## Interfaces
-See the [gateway smoke-test guide](../development/smoke-testing.md) for commands and platform instructions. The smoke CLI is implemented; other command concepts in this page are not.
-## Persistence
-CLI itself does not own database state.
-## Configuration
-Explicit profile/config location and environment secret references.
-## Security
-Redaction, least privilege, confirmation and path confinement.
-## Error handling
-Stable nonzero exit codes, no stack trace by default, correlation ID for diagnostics.
-## Observability
-Command operation IDs and optional debug logs with redaction.
-## Testing
-CLI runner tests, secret-canary output, destructive confirmation, exit-code contract.
-## Acceptance criteria
-The implemented smoke commands have help and tests; live inference is explicitly opted into; proposed commands are not operational; secret canaries are absent from terminal output.
-## Dependencies
-Python SDK APIs; no additional runtime dependency.
-## Priority
-P1.
-## Implementation status
-YANTRA-002-V01 implements `yantra-smoke` with `argparse`, offline mock completion/stream/tool proposals, provider status, live model catalogs, and live completion/stream/tool-call normalization for Ollama and OpenCode Zen/Go. V05 adds bounded output-token controls and separate content/termination classifications. OpenCode inference requires `--allow-billable`. The CLI reads credential references through `CredentialManager`, writes no credentials or request data, and redacts known credential values before output. Broader agent, skills, session, trace, and evaluation commands remain unimplemented.
-## Open questions
-Configuration profile format and command compatibility policy.
+YANTRA provides a standard-library `argparse` developer CLI named `yantra`.
+The existing `yantra-smoke` command remains available and backward compatible
+for gateway-level smoke tests. Neither command installs services or starts a
+background process.
+
+## Commands
+
+| Command | Network behavior | Result |
+|---|---|---|
+| `yantra --version` | None | Prints installed package version. |
+| `yantra --help` | None | Lists commands and their usage. |
+| `yantra doctor` | None | Checks Python, installed runtime distributions, and presence of default provider environment credentials without revealing values. |
+| `yantra doctor --check-ollama` | Bounded loopback request only | Checks `http://127.0.0.1:11434/api/tags`; Ollama remains optional. |
+| `yantra providers` | None | Lists CLI smoke providers and whether default credential variables are configured. |
+| `yantra models` | None | Lists available CLI smoke providers and explains live discovery is opt-in. |
+| `yantra models PROVIDER` | None | Confirms no request was made and prompts for `--live`. |
+| `yantra models PROVIDER --live` | Live provider catalog request | Lists catalog models; does not run inference. |
+| `yantra quickstart` | None | Runs a deterministic model → tool → model example using an in-process mock. |
+
+`doctor` exits nonzero only for a Python-version or required-runtime-dependency
+problem. Missing optional provider configuration and unavailable Ollama are
+reported as optional conditions, not package installation failures. The
+Ollama request uses a short timeout, `trust_env=False`, no credentials, and a
+loopback-only URL.
+
+The CLI smoke registry currently includes Ollama, OpenCode Zen, and OpenCode
+Go. The SDK also exposes additional provider adapters, but those are not
+automatically registered in this CLI. Catalog availability does not establish
+account entitlement or model support.
+
+## Offline quickstart
+
+After installing a wheel or source archive into an environment, run:
+
+```sh
+yantra quickstart
+```
+
+It displays the mock model's tool proposal, the typed local calculator result,
+and final model response. It uses the same bounded agent engine and explicit
+tool registry as the SDK example; no API key, network, database, or provider
+service is used. Tools proposed by an actual model are untrusted: this example
+only registers and authorizes one local, read-only calculator.
+
+## Legacy gateway smoke CLI
+
+`yantra-smoke` remains the lower-level gateway diagnostic interface:
+
+```sh
+yantra-smoke --help
+yantra-smoke offline
+yantra-smoke providers
+yantra-smoke models ollama
+```
+
+In the legacy smoke CLI, `models PROVIDER` already means a live catalog
+request. The newer `yantra models` command requires explicit `--live` to make
+that request. `yantra-smoke complete PROVIDER/MODEL` performs live inference;
+OpenCode requires `--allow-billable`. Tool-call mode displays normalized
+proposals and never executes them. See the [gateway smoke guide](../development/smoke-testing.md)
+for provider limitations, token controls, and platform instructions.
+
+## Compatibility and security
+
+The `yantra` entry point is additive; `yantra-smoke` and its existing flags
+remain available. CLI output does not include credential values or provider
+reasoning. `doctor` checks only the default environment references and does
+not query the keyring. Live model discovery is explicit and separate from
+inference. Neither CLI makes YANTRA an OS sandbox: the Python host remains
+trusted, and filesystem/network access are not isolated.
+
+The API and CLI are pre-1.0 developer-preview interfaces and may change.
+See the [stability policy](../development/developer-preview-policy.md),
+[installation guide](../getting-started/installation.md), and
+[troubleshooting guide](../getting-started/troubleshooting.md).
