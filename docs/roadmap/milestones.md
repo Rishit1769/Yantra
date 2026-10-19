@@ -49,10 +49,10 @@ developer CLI, offline quickstart, safe doctor/provider/model commands,
 cross-platform installation and stability guidance, artifact validation, and
 read-only release-candidate CI are implemented. Local test/build/install and
 dependency-audit evidence is in the [engineering report](../development/yantra-005-developer-preview.md).
-The new nine-job OS/Python matrix has not yet completed on this change;
-therefore hosted cross-platform verification and release readiness remain
-unverified. Version `0.2.0` is unchanged, and no release or publication has
-occurred.
+The new nine-job OS/Python matrix was dispatched for PR #5 but remained queued
+without any job starting at the time of this report; hosted cross-platform
+verification and release readiness therefore remain **NOT VERIFIED**. Version
+`0.2.0` is unchanged, and no release or publication has occurred.
 
 ## Research extensions
 Adaptive context, adaptive routing, evidence-guided recovery, and skill learning proceed as isolated experiments with baselines, ablations, reproducibility manifests, privacy reviews, and no default behavior change until evidence and safety review support adoption.
