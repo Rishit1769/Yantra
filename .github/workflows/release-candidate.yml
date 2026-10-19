@@ -5,7 +5,12 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/release-candidate.yml"
-      - "docs/**"
+      - "docs/development/developer-preview-policy.md"
+      - "docs/development/release-artifact-verification.md"
+      - "docs/development/releasing.md"
+      - "docs/features/**"
+      - "docs/getting-started/**"
+      - "docs/guides/**"
       - "examples/**"
       - "pyproject.toml"
       - "README.md"
